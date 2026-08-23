@@ -1,0 +1,13 @@
+[Unit]
+Description=Options monitoring report
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=optionmonitor
+Group=optionmonitor
+WorkingDirectory=/opt/option-monitor
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=/opt/option-monitor/.env
+ExecStart=/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/run_options_monitor.py --root /opt/option-monitor
