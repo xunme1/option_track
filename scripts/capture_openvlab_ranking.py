@@ -12,6 +12,8 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from option_monitor.openvlab_browser import OpenVlabRankingSnapshotter
+from option_monitor.openvlab_snapshot import OpenVlabSnapshotError
+from option_monitor.config import load_env_file
 from option_monitor.settings import SHANGHAI
 
 
@@ -30,6 +32,7 @@ def main(
 
     try:
         root = args.root.resolve()
+        load_env_file(root / ".env")
         state = (root / "state").resolve()
         state.mkdir(parents=True, exist_ok=True)
         output = args.output.resolve()
@@ -42,6 +45,9 @@ def main(
             state / "openvlab-browser-profile"
         )
         snapshotter.capture(output, captured_at)
+    except OpenVlabSnapshotError as error:
+        print(f"OpenVLab snapshot failed: {error}", file=sys.stderr)
+        return 1
     except Exception:
         print("OpenVLab snapshot failed", file=sys.stderr)
         return 1

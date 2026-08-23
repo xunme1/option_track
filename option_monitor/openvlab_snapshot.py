@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -24,7 +25,12 @@ DISPLAY_AMOUNT = re.compile(r"^([+-]?\d+(?:\.\d+)?)(万|亿)?$")
 HEADER_HEIGHT = 72
 MIN_PANEL_WIDTH = 800
 MIN_PANEL_HEIGHT = 200
-FONT_PATH = Path(r"C:\Windows\Fonts\msyh.ttc")
+FONT_PATHS = (
+    Path(r"C:\Windows\Fonts\msyh.ttc"),
+    Path(r"C:\Windows\Fonts\simhei.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+)
 
 
 class OpenVlabSnapshotError(RuntimeError):
@@ -89,7 +95,8 @@ def compose_openvlab_rankings(
 ) -> Path:
     if Image is None or ImageDraw is None or ImageFont is None:
         raise OpenVlabSnapshotError("Pillow is unavailable")
-    if not FONT_PATH.is_file():
+    font_path = _font_path()
+    if font_path is None:
         raise OpenVlabSnapshotError("OpenVLab ranking font is unavailable")
 
     destination = Path(output_path)
@@ -103,8 +110,8 @@ def compose_openvlab_rankings(
         )
         canvas = Image.new("RGB", (width, height), (255, 255, 255))
         draw = ImageDraw.Draw(canvas)
-        font = ImageFont.truetype(str(FONT_PATH), 24)
-        timestamp_font = ImageFont.truetype(str(FONT_PATH), 18)
+        font = ImageFont.truetype(str(font_path), 24)
+        timestamp_font = ImageFont.truetype(str(font_path), 18)
 
         _draw_panel_header(
             draw,
@@ -143,6 +150,16 @@ def compose_openvlab_rankings(
         ) from None
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _font_path() -> Path | None:
+    override = (
+        os.environ.get("OPENVLAB_FONT_PATH", "").strip()
+        or os.environ.get("OPTION_MONITOR_FONT_PATH", "").strip()
+    )
+    if override:
+        return Path(override).expanduser()
+    return next((path for path in FONT_PATHS if path.is_file()), None)
 
 
 def _read_panel(path: Path):

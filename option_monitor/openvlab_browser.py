@@ -61,9 +61,10 @@ class OpenVlabRankingSnapshotter:
             )
         except OpenVlabSnapshotError:
             raise
-        except Exception:
+        except Exception as error:
             raise OpenVlabSnapshotError(
-                "OpenVLab browser capture failed"
+                "OpenVLab browser capture failed: "
+                f"{type(error).__name__}"
             ) from None
         finally:
             increase_path.unlink(missing_ok=True)

@@ -47,6 +47,8 @@ NEUTRAL_BACKGROUND = (246, 247, 249)
 FONT_PATHS = (
     Path(r"C:\Windows\Fonts\msyh.ttc"),
     Path(r"C:\Windows\Fonts\simhei.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    Path("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
 )
 
 
@@ -61,7 +63,7 @@ def render_anomaly_chart(
         raise AnomalyChartError("Pillow is unavailable")
     if len(report.cards) > 30:
         raise AnomalyChartError("anomaly chart has too many cards")
-    font_path = next((path for path in FONT_PATHS if path.is_file()), None)
+    font_path = _font_path()
     if font_path is None:
         raise AnomalyChartError("anomaly chart font is unavailable")
 
@@ -121,6 +123,13 @@ def _load_fonts(font_path: Path) -> dict[str, object]:
         }
     except (OSError, ValueError):
         raise AnomalyChartError("anomaly chart font is unavailable") from None
+
+
+def _font_path() -> Path | None:
+    override = os.environ.get("OPTION_MONITOR_FONT_PATH", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return next((path for path in FONT_PATHS if path.is_file()), None)
 
 
 def _draw_header(draw, report, fonts) -> None:

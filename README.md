@@ -6,7 +6,7 @@
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv git
+sudo apt install -y python3 python3-venv git fonts-noto-cjk
 cd /opt/option-monitor
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
@@ -16,7 +16,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-编辑 `.env`，填写 Orange、RQData、钉钉及 OSS 的值。`ALIYUN_OSS_PREFIX` 是图表在 Bucket 内的对象前缀，例如 `option-monitor/charts`。请勿提交 `.env`。
+编辑 `.env`，填写 Orange、RQData、钉钉及 OSS 的值。`ALIYUN_OSS_PREFIX` 是图表在 Bucket 内的对象前缀，例如 `option-monitor/charts`。`fonts-noto-cjk` 为中文图表和 OpenVLab 合图提供默认字体；若使用自定义字体，可填写 `OPTION_MONITOR_FONT_PATH`，或以 `OPENVLAB_FONT_PATH` 单独覆盖 OpenVLab。请勿提交 `.env`。
 
 ## 手工验证
 
