@@ -9,5 +9,6 @@ User=optionmonitor
 Group=optionmonitor
 WorkingDirectory=/opt/option-monitor
 Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/optionmonitor
 EnvironmentFile=/opt/option-monitor/.env
 ExecStart=/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/run_options_monitor.py --root /opt/option-monitor
