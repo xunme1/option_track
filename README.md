@@ -24,10 +24,10 @@ chmod 600 .env
 .venv/bin/python scripts/run_options_monitor.py --root . --dry-run
 ```
 
-正式验证（会上传 OSS、并按程序规则发送钉钉）可使用：
+正式验证（会上传 OSS、并向钉钉群投递）使用 Linux 投递脚本：
 
 ```bash
-.venv/bin/python scripts/run_options_monitor.py --root . --force-anomaly-report --force-all-products --require-full-coverage
+.venv/bin/python scripts/run_and_deliver_options_monitor.py --root . --force-anomaly-report --force-all-products --require-full-coverage
 ```
 
 ## OpenVLab 登录与截图
@@ -60,7 +60,7 @@ sudo systemctl enable --now option-monitor.timer
 systemctl list-timers option-monitor.timer
 ```
 
-任务在周一至周五的北京时间 10:15、14:30 运行。查看结果：
+任务在周一至周五的北京时间 10:15、14:30 运行。它会采集、上传 OSS，并以钉钉签名 Webhook 投递 ready 状态的报告；投递成功后会记录幂等状态，防止重试重复发送。查看结果：
 
 ```bash
 sudo systemctl status option-monitor.service

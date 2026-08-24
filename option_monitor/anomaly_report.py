@@ -66,6 +66,7 @@ def build_anomaly_chart_report(
     iv_histories: Mapping[str, Sequence[Decimal]],
     option_histories: Mapping[str, Sequence[DailyOptionClose]],
     expected_count: int,
+    allow_empty: bool = False,
 ) -> AnomalyChartReport | None:
     all_oi_rows = tuple(
         row
@@ -109,7 +110,7 @@ def build_anomaly_chart_report(
     active_codes = tuple(
         code for code in categories if code in collections
     )
-    if not active_codes:
+    if not active_codes and not allow_empty:
         return None
 
     cards = [

@@ -1006,36 +1006,43 @@ class MonitorRunner:
                 iv_histories=iv_history_values,
                 option_histories=option_histories,
                 expected_count=len(expected),
+                allow_empty=force_anomaly_report,
             )
             if anomaly_report is not None:
                 delivery_report = anomaly_report
-                try:
-                    results = build_interpretation_results(
-                        report=anomaly_report,
-                        collections=collections,
-                        price_quotes=price_quotes,
-                        iv_histories=iv_history_values,
-                        option_histories=option_histories,
-                        product_names={
-                            product.code: product.name
-                            for product in self.products
-                        },
-                    )
-                    selection = select_anomaly_delivery(
-                        anomaly_report, results
-                    )
-                    delivery_report = replace(
-                        anomaly_report,
-                        cards=selection.image_cards,
-                    )
-                    interpretation = render_anomaly_interpretation(
-                        results, selection.text_codes
-                    )
-                except Exception:
+                if not anomaly_report.cards:
                     interpretation = (
                         "## 异常解读\n\n"
-                        "解读生成失败，本次长图仍可正常查看。"
+                        "本轮全品种监测未触发价格、ATM IV、持仓或偏度异常。"
                     )
+                else:
+                    try:
+                        results = build_interpretation_results(
+                            report=anomaly_report,
+                            collections=collections,
+                            price_quotes=price_quotes,
+                            iv_histories=iv_history_values,
+                            option_histories=option_histories,
+                            product_names={
+                                product.code: product.name
+                                for product in self.products
+                            },
+                        )
+                        selection = select_anomaly_delivery(
+                            anomaly_report, results
+                        )
+                        delivery_report = replace(
+                            anomaly_report,
+                            cards=selection.image_cards,
+                        )
+                        interpretation = render_anomaly_interpretation(
+                            results, selection.text_codes
+                        )
+                    except Exception:
+                        interpretation = (
+                            "## 异常解读\n\n"
+                            "解读生成失败，本次长图仍可正常查看。"
+                        )
                 if self.local_only:
                     try:
                         anomaly_path = (
@@ -1066,7 +1073,7 @@ class MonitorRunner:
                         anomaly_chart_failed = True
                 openvlab_image_url = None
                 openvlab_failed = None
-                if _is_openvlab_snapshot_time(now):
+                if force_anomaly_report or _is_openvlab_snapshot_time(now):
                     openvlab_failed = True
                     if (
                         self.image_uploader is not None

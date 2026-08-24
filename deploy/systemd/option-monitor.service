@@ -11,4 +11,4 @@ WorkingDirectory=/opt/option-monitor
 Environment=PYTHONUNBUFFERED=1
 Environment=HOME=/var/lib/optionmonitor
 EnvironmentFile=/opt/option-monitor/.env
-ExecStart=/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/run_options_monitor.py --root /opt/option-monitor
+ExecStart=/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/run_and_deliver_options_monitor.py --root /opt/option-monitor --force-anomaly-report --force-all-products --require-full-coverage
