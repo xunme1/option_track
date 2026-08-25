@@ -48,6 +48,20 @@ OpenVLab 依赖 Linux 本机的持久化 Chromium 配置 `state/openvlab-browser
 
 后续定时任务使用无头 Chromium。默认使用 Playwright 安装的 Chromium；若想改用系统 Chrome，可在 `.env` 设置 `OPENVLAB_BROWSER_CHANNEL=chrome`。
 
+## 仅输出推送文字（供龙虾调用）
+
+`scripts/output_monitor_message_text.py` 只读取已经生成的 `alerts.json`，把 DingTalk Markdown 正文输出到标准输出。它不采集数据、不出图、不访问 OSS、不发送钉钉。
+
+```bash
+# 指定本次运行的正文；默认只输出 Markdown text，不输出标题或任何状态信息
+.venv/bin/python scripts/output_monitor_message_text.py --root . --run-id 20260825T111500+0800
+
+# 也可由龙虾直接传入 alerts.json 路径
+.venv/bin/python scripts/output_monitor_message_text.py --root . --payload state/outbox/20260825T111500+0800/alerts.json
+```
+
+需由龙虾接管发送时，先运行 `scripts/run_options_monitor.py` 生成 ready 清单，再调用本脚本取得正文；不要再对同一清单调用 `run_and_deliver_options_monitor.py`，以免两个发送方重复投递。标准 systemd 任务仍由 `run_and_deliver_options_monitor.py` 负责发送。
+
 ## systemd 定时任务
 
 将仓库部署在 `/opt/option-monitor` 后，调整 `deploy/systemd/option-monitor.service` 的 `User`、`Group` 和目录（如有需要），然后执行：
