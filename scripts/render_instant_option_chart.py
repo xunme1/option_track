@@ -56,6 +56,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Caller-selected destination PNG path; parent directories are created.",
     )
     parser.add_argument(
+        "--contract",
+        help=(
+            "Optional specific futures contract, for example MA609 or IF2609. "
+            "Without it, the current main contract is resolved."
+        ),
+    )
+    parser.add_argument(
         "--root",
         type=Path,
         default=REPOSITORY_ROOT,
@@ -75,6 +82,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = args.output.expanduser().resolve()
         if output.suffix.casefold() != ".png":
             parser.error("--output must end in .png")
+        requested_contract = _contract(args.contract)
         load_env_file(root / ".env")
         token = os.environ.get("ORANGE_API_TOKEN", "").strip()
         if not token:
@@ -85,26 +93,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             RqdataFuturesClient(api_key=os.environ.get("RQDATA_API_KEY") or None),
             EastmoneyFuturesClient(),
         )
-        main_quote = price_client.fetch_main_quotes((product,)).get(product.code)
-        if main_quote is None:
-            raise RuntimeError("futures price quote is unavailable")
         resolved_at_ms = int(time.time() * 1000)
-        try:
+        if requested_contract is not None:
+            # A directed request must never silently fall back to the main or
+            # nearest contract: the chart has to describe precisely what was
+            # asked for.
             mapping = resolve_mapping(
                 hitick,
                 product,
                 trading_day,
                 resolved_at_ms,
-                main_quote.underlying,
+                requested_contract,
             )
-        except MainOptionUnavailable:
-            mapping = resolve_nearest_option_mapping(
-                hitick,
-                product,
-                trading_day,
-                resolved_at_ms,
-                main_quote.underlying,
-            )
+        else:
+            main_quote = price_client.fetch_main_quotes((product,)).get(product.code)
+            if main_quote is None:
+                raise RuntimeError("futures price quote is unavailable")
+            try:
+                mapping = resolve_mapping(
+                    hitick,
+                    product,
+                    trading_day,
+                    resolved_at_ms,
+                    main_quote.underlying,
+                )
+            except MainOptionUnavailable:
+                mapping = resolve_nearest_option_mapping(
+                    hitick,
+                    product,
+                    trading_day,
+                    resolved_at_ms,
+                    main_quote.underlying,
+                )
         basic = hitick.basic_by_expire(mapping.underlying, mapping.expire)
         vol = hitick.vol_by_underlying(
             mapping.underlying, mapping.expire, mapping.multiplier
@@ -185,6 +205,15 @@ def _trading_day(value: str | None, now: datetime) -> str:
     candidate = now.strftime("%Y%m%d") if value is None else value.strip()
     if len(candidate) != 8 or not candidate.isdigit():
         raise ValueError("trading day must be YYYYMMDD")
+    return candidate
+
+
+def _contract(value: str | None) -> str | None:
+    if value is None:
+        return None
+    candidate = value.strip().upper()
+    if not candidate:
+        raise ValueError("contract is empty")
     return candidate
 
 

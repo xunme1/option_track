@@ -71,17 +71,30 @@ OpenVLab 依赖 Linux 本机的持久化 Chromium 配置 `state/openvlab-browser
 ```text
 --product <品种中文名或代码>    必填。例如：甲醇、MA、黄金、au。
 --output <PNG 输出路径>         必填。由龙虾为每次请求生成唯一的绝对路径，必须以 .png 结尾。
+--contract <指定期货合约>       可选。例如：MA609、IF2609。传入后严格按该合约采集。
 ```
 
-可选参数：`--root <项目根目录>`（默认脚本所在项目）、`--trading-day YYYYMMDD`（默认北京时间当天；只在需指定交易日的回放/排障时传入）。支持的品种以 `option_monitor/settings.py` 的 `PRODUCTS` 为准；不要传具体合约代码（例如 `MA2609`），脚本会自行解析当期可用的期权标的。
+未传 `--contract` 时，脚本先取得当前主力期货合约，再解析对应期权链；传入 `--contract` 时，脚本严格使用该期货合约，不能找到有效、未到期的期权链就返回失败，绝不改用主力或临近合约。郑商所合约可使用 Orange 识别的三位年月形式（如 `MA609`）；中金所等通常为四位年月（如 `IF2609`）。品种代码必须与合约匹配。
+
+其他可选参数：`--root <项目根目录>`（默认脚本所在项目）、`--trading-day YYYYMMDD`（默认北京时间当天；只在需指定交易日的回放/排障时传入）。支持的品种以 `option_monitor/settings.py` 的 `PRODUCTS` 为准。
 
 龙虾调用示例（输出路径由龙虾自行决定，示例不应原样固化）：
 
 ```bash
-/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/render_instant_option_chart.py \
+sudo -u optionmonitor -H /opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/render_instant_option_chart.py \
   --root /opt/option-monitor \
   --product 甲醇 \
   --output /var/tmp/lobster/option-ma-request-001.png
+```
+
+指定合约的示例：
+
+```bash
+sudo -u optionmonitor -H /opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/render_instant_option_chart.py \
+  --root /opt/option-monitor \
+  --product MA \
+  --contract MA609 \
+  --output /var/tmp/lobster/option-ma609-request-001.png
 ```
 
 成功时标准输出为机器可读的三行：`IMAGE_PATH=<绝对路径>`、`PRODUCT_CODE=<代码>`、`UNDERLYING=<实际期货合约>`。退出码为 `0` 才可读取并发送 `IMAGE_PATH`；非 `0` 时不应发送旧图或猜测结果。运行依赖 `.env` 中的 `ORANGE_API_TOKEN`；`RQDATA_API_KEY` 可选（缺失或不可用时自动尝试东方财富期货报价）。四格依次为日内期货涨跌、ATM IV、Call/Put 较昨持仓变化、RR25 偏度。单次即时采集没有历史序列，因此不展示 ΔIV、ΔRR25 或十日排名。
