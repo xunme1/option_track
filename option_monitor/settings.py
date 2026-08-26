@@ -24,12 +24,16 @@ PRODUCTS = (
     ProductSpec("ru", "天然橡胶", "SHFE"),
     ProductSpec("sc", "原油", "INE"),
     ProductSpec("i", "铁矿石", "DCE"),
+    ProductSpec("jm", "焦煤", "DCE"),
+    ProductSpec("jd", "鸡蛋", "DCE"),
     ProductSpec("m", "豆粕", "DCE"),
     ProductSpec("p", "棕榈油", "DCE"),
     ProductSpec("c", "玉米", "DCE"),
     ProductSpec("y", "豆油", "DCE"),
     ProductSpec("pp", "聚丙烯", "DCE"),
     ProductSpec("l", "聚乙烯", "DCE"),
+    ProductSpec("v", "PVC", "DCE"),
+    ProductSpec("eg", "乙二醇", "DCE"),
     ProductSpec("pg", "液化石油气", "DCE"),
     ProductSpec("TA", "PTA", "CZCE"),
     ProductSpec("MA", "甲醇", "CZCE"),
@@ -38,6 +42,7 @@ PRODUCTS = (
     ProductSpec("RM", "菜粕", "CZCE"),
     ProductSpec("OI", "菜油", "CZCE"),
     ProductSpec("SA", "纯碱", "CZCE"),
+    ProductSpec("SH", "烧碱", "CZCE"),
     ProductSpec("si", "工业硅", "GFEX"),
     ProductSpec("lc", "碳酸锂", "GFEX"),
     ProductSpec("ps", "多晶硅", "GFEX"),
@@ -46,8 +51,8 @@ PRODUCTS = (
 NIGHT_TO_0230 = frozenset({"au", "ag", "sc"})
 NIGHT_TO_0100 = frozenset({"cu", "al", "zn", "ni"})
 NIGHT_TO_2300 = frozenset({
-    "rb", "ru", "i", "m", "p", "c", "y", "pp", "l", "pg",
-    "TA", "MA", "SR", "CF", "RM", "OI", "SA",
+    "rb", "ru", "i", "jm", "m", "p", "c", "y", "pp", "l", "v",
+    "eg", "pg", "TA", "MA", "SR", "CF", "RM", "OI", "SA", "SH",
 })
 CFFEX = frozenset({"IO", "MO", "HO"})
 DAY_ONLY = frozenset({"si", "lc", "ps"})
