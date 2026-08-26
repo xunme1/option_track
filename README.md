@@ -62,6 +62,32 @@ OpenVLab 依赖 Linux 本机的持久化 Chromium 配置 `state/openvlab-browser
 
 需由龙虾接管发送时，先运行 `scripts/run_options_monitor.py` 生成 ready 清单，再调用本脚本取得正文；不要再对同一清单调用 `run_and_deliver_options_monitor.py`，以免两个发送方重复投递。标准 systemd 任务仍由 `run_and_deliver_options_monitor.py` 负责发送。
 
+## 龙虾即时单品种四格图
+
+`scripts/render_instant_option_chart.py` 供龙虾回答“甲醇的期权情况”等即时查询。每一次调用都会直接请求行情和期权接口，不依赖此前的监控任务、SQLite 快照或已生成的图；它只在调用方指定的位置写出一张 PNG，不会上传 OSS、不会发送钉钉。
+
+龙虾必须传入以下两个参数：
+
+```text
+--product <品种中文名或代码>    必填。例如：甲醇、MA、黄金、au。
+--output <PNG 输出路径>         必填。由龙虾为每次请求生成唯一的绝对路径，必须以 .png 结尾。
+```
+
+可选参数：`--root <项目根目录>`（默认脚本所在项目）、`--trading-day YYYYMMDD`（默认北京时间当天；只在需指定交易日的回放/排障时传入）。支持的品种以 `option_monitor/settings.py` 的 `PRODUCTS` 为准；不要传具体合约代码（例如 `MA2609`），脚本会自行解析当期可用的期权标的。
+
+龙虾调用示例（输出路径由龙虾自行决定，示例不应原样固化）：
+
+```bash
+/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/render_instant_option_chart.py \
+  --root /opt/option-monitor \
+  --product 甲醇 \
+  --output /var/tmp/lobster/option-ma-request-001.png
+```
+
+成功时标准输出为机器可读的三行：`IMAGE_PATH=<绝对路径>`、`PRODUCT_CODE=<代码>`、`UNDERLYING=<实际期货合约>`。退出码为 `0` 才可读取并发送 `IMAGE_PATH`；非 `0` 时不应发送旧图或猜测结果。运行依赖 `.env` 中的 `ORANGE_API_TOKEN`；`RQDATA_API_KEY` 可选（缺失或不可用时自动尝试东方财富期货报价）。四格依次为日内期货涨跌、ATM IV、Call/Put 较昨持仓变化、RR25 偏度。单次即时采集没有历史序列，因此不展示 ΔIV、ΔRR25 或十日排名。
+
+Linux 需安装 `fonts-noto-cjk`；脚本会自动寻找 Noto Sans CJK 或文泉驿字体。若系统字体位置不同，在 `.env` 填写 `OPTION_MONITOR_FONT_PATH=/实际/字体文件.ttc`。
+
 ## systemd 定时任务
 
 将仓库部署在 `/opt/option-monitor` 后，调整 `deploy/systemd/option-monitor.service` 的 `User`、`Group` 和目录（如有需要），然后执行：
