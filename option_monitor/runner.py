@@ -61,7 +61,11 @@ from option_monitor.storage import MonitorStore
 DAY_MS = 86_400_000
 SLOT_MINUTES = 5
 RETRY_DELAYS = (0.5, 1.5)
-MANUAL_CLOSE_FRESH_WINDOW_MS = 8 * 60 * 60 * 1000
+# Reuse window for manual/forced runs restoring a just-finished scheduled run
+# (e.g. the lobster cron one minute after the 10:15/14:30 timer).  Must stay
+# short: an hours-wide window lets afternoon runs silently restore stale
+# morning snapshots instead of collecting fresh data.
+MANUAL_CLOSE_FRESH_WINDOW_MS = 20 * 60 * 1000
 PRICE_SOURCE_CLOCK_SKEW_MS = 5 * 1000
 _TIMESTAMP_FIELDS = ("timestamp_ms", "data_time_ms", "time_ms")
 _SERIES_FIELDS = ("points", "items", "rows", "data")
