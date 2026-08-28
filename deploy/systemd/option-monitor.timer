@@ -1,5 +1,5 @@
 [Unit]
-Description=Run options monitor at 10:15 and 14:30 China time on weekdays
+Description=Quiet options monitor capture at 10:15 and 14:30 China time on weekdays
 
 [Timer]
 OnCalendar=Mon..Fri *-*-* 10:15:00 Asia/Shanghai

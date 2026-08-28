@@ -113,7 +113,7 @@ sudo systemctl enable --now option-monitor.timer
 systemctl list-timers option-monitor.timer
 ```
 
-任务在周一至周五的北京时间 10:15、14:30 运行。它会采集、上传 OSS，并以钉钉签名 Webhook 投递 ready 状态的报告；投递成功后会记录幂等状态，防止重试重复发送。查看结果：
+任务在周一至周五的北京时间 10:15、14:30 运行（15:00 另有收盘采集）。它只静默采集：生成异常长图、上传 OSS、产出钉钉文案并写入 sqlite 基线，但**不投递**；群推送由龙虾（OpenClaw）连接器的定时任务完成。查看结果：
 
 ```bash
 sudo systemctl status option-monitor.service

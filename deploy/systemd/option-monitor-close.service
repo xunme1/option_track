@@ -11,4 +11,4 @@ WorkingDirectory=/opt/option-monitor
 Environment=PYTHONUNBUFFERED=1
 Environment=HOME=/var/lib/optionmonitor
 EnvironmentFile=/opt/option-monitor/.env
-ExecStart=/opt/option-monitor/deploy/option-monitor-close-capture.sh
+ExecStart=/opt/option-monitor/deploy/option-monitor-capture.sh
