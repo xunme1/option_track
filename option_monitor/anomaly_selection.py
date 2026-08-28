@@ -130,10 +130,10 @@ def _score(
     rr25 = _rr25_strength(result)
     oi = oi_total / max_oi if max_oi > ZERO else ZERO
     base = (
-        price * Decimal("0.30")
+        price * Decimal("0.15")
         + iv * Decimal("0.25")
         + rr25 * Decimal("0.25")
-        + oi * Decimal("0.20")
+        + oi * Decimal("0.35")
     )
     important = (
         IMPORTANT_BONUS

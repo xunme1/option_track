@@ -97,7 +97,7 @@ sudo -u optionmonitor -H /opt/option-monitor/.venv/bin/python /opt/option-monito
   --output /var/tmp/lobster/option-ma609-request-001.png
 ```
 
-成功时标准输出为机器可读的三行：`IMAGE_PATH=<绝对路径>`、`PRODUCT_CODE=<代码>`、`UNDERLYING=<实际期货合约>`。退出码为 `0` 才可读取并发送 `IMAGE_PATH`；非 `0` 时不应发送旧图或猜测结果。运行依赖 `.env` 中的 `ORANGE_API_TOKEN`；`RQDATA_API_KEY` 可选（缺失或不可用时自动尝试东方财富期货报价）。四格依次为日内期货涨跌、ATM IV、Call/Put 较昨持仓变化、RR25 偏度。单次即时采集没有历史序列，因此不展示 ΔIV、ΔRR25 或十日排名。
+成功时标准输出为机器可读的三行：`IMAGE_PATH=<绝对路径>`、`PRODUCT_CODE=<代码>`、`UNDERLYING=<实际期货合约>`。退出码为 `0` 才可读取并发送 `IMAGE_PATH`；非 `0` 时不应发送旧图或猜测结果。运行依赖 `.env` 中的 `ORANGE_API_TOKEN`；`RQDATA_API_KEY` 可选（缺失或不可用时自动尝试东方财富期货报价）。四格依次为日内期货涨跌、ATM IV、Call/Put 较昨持仓变化、RR25 偏度。即时图的 ΔRR25 为当前值减去本地 `state/option_monitor.sqlite3` 中上一交易日 14:30 基线；基线尚未由监控任务成功写入时显示 `--`。ΔIV 与 RR25 十日排名不计算或展示。
 
 Linux 需安装 `fonts-noto-cjk`；脚本会自动寻找 Noto Sans CJK 或文泉驿字体。若系统字体位置不同，在 `.env` 填写 `OPTION_MONITOR_FONT_PATH=/实际/字体文件.ttc`。
 

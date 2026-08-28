@@ -1584,7 +1584,9 @@ def _as_beijing(now: datetime) -> datetime:
 
 
 def _is_close_capture_time(now: datetime) -> bool:
-    return (now.hour, now.minute) in ((14, 50), (15, 0), (15, 10))
+    # The regular afternoon monitoring run is the daily RR25 baseline.  Keep
+    # the later close-adjacent slots for installations that schedule them.
+    return (now.hour, now.minute) in ((14, 30), (14, 50), (15, 0), (15, 10))
 
 
 def _manifest_document(manifest: RunManifest) -> dict[str, Any]:

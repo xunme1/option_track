@@ -54,6 +54,8 @@ class InstantProductChartData:
     collection: ProductCollection
     futures_quote: FuturesChangeQuote | None
     rendered_at_ms: int
+    rr25_change: Decimal | None = None
+    rr25_baseline_trading_day: str | None = None
 
 
 def render_instant_product_chart(
@@ -220,8 +222,20 @@ def _draw_skew(draw, box, data: InstantProductChartData, fonts) -> None:
             fill=TEXT,
             font=fonts["value"],
         )
-    draw.text((x, y + 45), "ΔRR25  单次即时采集不计算", fill=MUTED, font=fonts["body"])
-    draw.text((x, y + 84), "RR25 = 25Δ Call IV - Put IV", fill=MUTED, font=fonts["small"])
+    change = data.rr25_change
+    change_text = "--" if change is None else f"{change * Decimal('100'):+.2f} pp"
+    draw.text(
+        (x, y + 45),
+        f"ΔRR25  {change_text}",
+        fill=MUTED if change is None else _direction_color(change),
+        font=fonts["body"],
+    )
+    baseline_text = (
+        f"基线  {data.rr25_baseline_trading_day} 14:30 快照"
+        if data.rr25_baseline_trading_day is not None
+        else "基线  等待上一交易日 14:30 快照"
+    )
+    draw.text((x, y + 84), baseline_text, fill=MUTED, font=fonts["small"])
 
 
 def _draw_footer(draw, data: InstantProductChartData, fonts) -> None:
@@ -230,7 +244,7 @@ def _draw_footer(draw, data: InstantProductChartData, fonts) -> None:
     )
     draw.text(
         (44, 430),
-        f"期权快照时间  {market_time:%Y-%m-%d %H:%M:%S}  |  单次接口采集，未使用历史监控数据",
+        f"期权快照时间  {market_time:%Y-%m-%d %H:%M:%S}  |  ΔRR25 仅读取本地日度基线",
         fill=MUTED,
         font=fonts["small"],
     )

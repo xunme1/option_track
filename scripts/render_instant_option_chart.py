@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import sqlite3
 import sys
 import time
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Sequence
 
@@ -165,6 +167,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         exact_quote = price_client.fetch_quotes(
             (product,), {product.code: mapping}
         ).get(product.code)
+        baseline = _previous_rr25_baseline(
+            root, product.code, collection.market.trading_day
+        )
+        current_rr25 = (
+            collection.option_snapshot.rr25
+            if collection.option_snapshot is not None else None
+        )
         image = render_instant_product_chart(
             InstantProductChartData(
                 product=product,
@@ -172,6 +181,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 collection=collection,
                 futures_quote=exact_quote,
                 rendered_at_ms=int(time.time() * 1000),
+                rr25_change=(
+                    current_rr25 - baseline[1]
+                    if current_rr25 is not None and baseline is not None else None
+                ),
+                rr25_baseline_trading_day=(
+                    baseline[0] if baseline is not None else None
+                ),
             ),
             output,
         )
@@ -215,6 +231,33 @@ def _contract(value: str | None) -> str | None:
     if not candidate:
         raise ValueError("contract is empty")
     return candidate
+
+
+def _previous_rr25_baseline(
+    root: Path, product_code: str, trading_day: str
+) -> tuple[str, Decimal] | None:
+    """Read the previous completed daily RR25 snapshot without mutating state."""
+    database = root / "state" / "option_monitor.sqlite3"
+    if not database.is_file():
+        return None
+    try:
+        uri = database.resolve().as_uri() + "?mode=ro"
+        with sqlite3.connect(uri, uri=True) as connection:
+            row = connection.execute(
+                """
+                SELECT trading_day, rr25
+                FROM daily_option_closes
+                WHERE product_code = ? AND trading_day < ?
+                ORDER BY trading_day DESC
+                LIMIT 1
+                """,
+                (product_code, trading_day),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row[0]), Decimal(str(row[1]))
+    except (OSError, sqlite3.Error, InvalidOperation):
+        return None
 
 
 if __name__ == "__main__":

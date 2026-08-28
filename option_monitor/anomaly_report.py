@@ -237,30 +237,20 @@ def _rr_metric(
     history: Sequence[DailyOptionClose],
     triggered: bool,
 ) -> AnomalyMetric:
-    selected = tuple(close.rr25 for close in history[-11:])
+    # RR25 is shown against the latest completed trading-day baseline only.
+    # Do not calculate or expose a historical rank/mean until that separate
+    # monitoring rule is intentionally reintroduced.
+    selected = tuple(close.rr25 for close in history[-1:])
     change = (
         current - selected[-1]
         if current is not None and selected else None
     )
-    changes = tuple(
-        abs(later - earlier)
-        for earlier, later in zip(selected, selected[1:])
-    )
-    complete = len(changes) == 10
-    absolute_change = abs(change) if change is not None else None
     return AnomalyMetric(
         current=current,
         change=change,
-        rank=(
-            1 + sum(
-                1 for value in changes if value > absolute_change
-            )
-            if complete and absolute_change is not None else None
-        ),
-        history_count=len(changes),
-        history_mean=(
-            sum(changes, ZERO) / Decimal(10) if complete else None
-        ),
+        rank=None,
+        history_count=len(selected),
+        history_mean=None,
         triggered=triggered,
         available=current is not None,
     )

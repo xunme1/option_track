@@ -496,13 +496,13 @@ def _draw_skew_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
         ),
         font=fonts["value"],
     )
-    rank = "--" if metric.rank is None else str(metric.rank)
-    mean = "--" if metric.history_mean is None else (
-        f"{metric.history_mean * Decimal('100'):.2f} pp"
-    )
     draw.text(
         (x, y + 73),
-        f"变化排名 {rank}  均值 {mean}",
+        (
+            "日度基线  上一交易日 14:30 快照"
+            if metric.change is not None
+            else "日度基线  等待上一交易日 14:30 快照"
+        ),
         fill=MUTED_COLOR,
         font=fonts["small"],
     )
