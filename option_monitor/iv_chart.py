@@ -103,7 +103,13 @@ def _font_path() -> Path | None:
     override = os.environ.get("OPTION_MONITOR_FONT_PATH", "").strip()
     if override:
         return Path(override).expanduser()
-    return next((path for path in FONT_PATHS if path.is_file()), None)
+    for path in FONT_PATHS:
+        try:
+            if path.is_file():
+                return path
+        except OSError:
+            continue
+    return None
 
 
 def _draw_header(draw, report: HourlyReport, fonts: dict[str, object]) -> None:

@@ -98,7 +98,13 @@ def _font_path() -> Path | None:
     if override:
         candidate = Path(override).expanduser()
         return candidate if candidate.is_file() else None
-    return next((path for path in FONT_PATHS if path.is_file()), None)
+    for path in FONT_PATHS:
+        try:
+            if path.is_file():
+                return path
+        except OSError:
+            continue
+    return None
 
 
 def _load_fonts(font_path: Path) -> dict[str, object]:
