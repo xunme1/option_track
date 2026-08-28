@@ -75,6 +75,7 @@ class HitickClient:
         self._api_token = api_token
         self._transport = transport or UrllibTransport()
         self._mcp_session_id: str | None = None
+        self._mcp_session_checked = False
         self._mcp_session_lock = threading.Lock()
 
     def basic_by_expire(self, underlying: str, expire: str) -> dict[str, Any]:
@@ -188,6 +189,7 @@ class HitickClient:
             with self._mcp_session_lock:
                 if self._mcp_session_id == session_id:
                     self._mcp_session_id = None
+                    self._mcp_session_checked = False
             session_id = self._ensure_mcp_session()
             message = self._mcp_call(payload, session_id)
 
@@ -212,12 +214,12 @@ class HitickClient:
             self._require_found(response)
         return response
 
-    def _ensure_mcp_session(self) -> str:
-        if self._mcp_session_id is not None:
+    def _ensure_mcp_session(self) -> str | None:
+        if self._mcp_session_checked:
             return self._mcp_session_id
 
         with self._mcp_session_lock:
-            if self._mcp_session_id is not None:
+            if self._mcp_session_checked:
                 return self._mcp_session_id
 
             initialize = {
@@ -239,20 +241,21 @@ class HitickClient:
             ):
                 raise HitickError("unexpected MCP initialize response shape")
             session_id = self._header(result.headers, "mcp-session-id")
-            if not session_id:
-                raise HitickError("MCP initialization did not return a session")
-
-            self._post(
-                MCP_URL,
-                {
-                    "jsonrpc": "2.0",
-                    "method": "notifications/initialized",
-                    "params": {},
-                },
-                self._mcp_headers(session_id),
-            )
-            self._mcp_session_id = session_id
-            return session_id
+            if session_id:
+                self._post(
+                    MCP_URL,
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized",
+                        "params": {},
+                    },
+                    self._mcp_headers(session_id),
+                )
+                self._mcp_session_id = session_id
+            # No mcp-session-id header means the server is stateless:
+            # proceed without a session instead of failing.
+            self._mcp_session_checked = True
+            return self._mcp_session_id
 
     def _mcp_call(
         self, payload: dict[str, Any], session_id: str | None
