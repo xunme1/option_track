@@ -1584,8 +1584,8 @@ def _as_beijing(now: datetime) -> datetime:
 
 
 def _is_close_capture_time(now: datetime) -> bool:
-    # The regular afternoon monitoring run is the daily RR25 baseline.  Keep
-    # the later close-adjacent slots for installations that schedule them.
+    # The close-adjacent run (15:00) is the daily RR25 baseline; the 14:30
+    # regular run doubles as a fallback in case the close capture never ran.
     return (now.hour, now.minute) in ((14, 30), (14, 50), (15, 0), (15, 10))
 
 

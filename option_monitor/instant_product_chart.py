@@ -231,9 +231,9 @@ def _draw_skew(draw, box, data: InstantProductChartData, fonts) -> None:
         font=fonts["body"],
     )
     baseline_text = (
-        f"基线  {data.rr25_baseline_trading_day} 14:30 快照"
+        f"基线  {data.rr25_baseline_trading_day} 收盘快照"
         if data.rr25_baseline_trading_day is not None
-        else "基线  等待上一交易日 14:30 快照"
+        else "基线  等待上一交易日收盘快照"
     )
     draw.text((x, y + 84), baseline_text, fill=MUTED, font=fonts["small"])
 

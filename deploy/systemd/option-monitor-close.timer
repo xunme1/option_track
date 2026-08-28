@@ -1,0 +1,10 @@
+[Unit]
+Description=Capture options close baseline at 15:00 China time on weekdays
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 15:00:00 Asia/Shanghai
+Persistent=true
+Unit=option-monitor-close.service
+
+[Install]
+WantedBy=timers.target

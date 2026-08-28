@@ -499,9 +499,9 @@ def _draw_skew_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
     draw.text(
         (x, y + 73),
         (
-            "日度基线  上一交易日 14:30 快照"
+            "日度基线  上一交易日收盘快照"
             if metric.change is not None
-            else "日度基线  等待上一交易日 14:30 快照"
+            else "日度基线  等待上一交易日收盘快照"
         ),
         fill=MUTED_COLOR,
         font=fonts["small"],

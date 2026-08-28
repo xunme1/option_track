@@ -1,0 +1,14 @@
+[Unit]
+Description=Options monitor close capture (quiet RR25 baseline)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=optionmonitor
+Group=optionmonitor
+WorkingDirectory=/opt/option-monitor
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/var/lib/optionmonitor
+EnvironmentFile=/opt/option-monitor/.env
+ExecStart=/opt/option-monitor/deploy/option-monitor-close-capture.sh
