@@ -7,7 +7,7 @@ cd /opt/option-monitor
 exec 9>>/opt/option-monitor/state/run.lock
 flock -w 900 9
 OUT=$(/opt/option-monitor/.venv/bin/python /opt/option-monitor/scripts/run_options_monitor.py \
-  --root /opt/option-monitor --force-all-products)
+  --root /opt/option-monitor --force-anomaly-report --force-all-products)
 printf '%s\n' "$OUT"
 MANIFEST=$(printf '%s\n' "$OUT" | sed -n 's/^MANIFEST_PATH=//p' | tail -1)
 if [ -n "$MANIFEST" ]; then
