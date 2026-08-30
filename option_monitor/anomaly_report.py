@@ -171,6 +171,24 @@ def _build_card(
         option.put_open_interest - option.put_pre_open_interest
         if option.put_oi_baseline_ready else None
     )
+    current_pcr = (
+        option.oi_pcr if option.call_open_interest > 0 else None
+    )
+    previous_pcr = (
+        Decimal(option.put_pre_open_interest)
+        / Decimal(option.call_pre_open_interest)
+        if option.call_oi_baseline_ready
+        and option.put_oi_baseline_ready
+        and option.call_pre_open_interest > 0
+        else None
+    )
+    pcr_change = (
+        current_pcr / previous_pcr - Decimal("1")
+        if current_pcr is not None
+        and previous_pcr is not None
+        and previous_pcr > ZERO
+        else None
+    )
     data_times = [market.data_time_ms, option.data_time_ms]
     if price_quote is not None:
         data_times.append(price_quote.source_time_ms)
@@ -205,6 +223,9 @@ def _build_card(
         evidence=_evidence_text(
             price_quote, atm_iv.change, call_delta, put_delta
         ),
+        oi_pcr=current_pcr,
+        previous_oi_pcr=previous_pcr,
+        oi_pcr_change=pcr_change,
     )
 
 

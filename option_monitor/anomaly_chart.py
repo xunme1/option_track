@@ -41,6 +41,7 @@ TRIGGER_BACKGROUNDS = {
     "price": (255, 241, 242),
     "iv": (239, 246, 255),
     "oi": (255, 247, 237),
+    "pcr": (240, 253, 250),
     "skew": (250, 245, 255),
 }
 NEUTRAL_BACKGROUND = (246, 247, 249)
@@ -295,10 +296,16 @@ def _draw_card(
         max_size=25,
         min_size=16,
     )
-    severity_text = "重要警报" if card.severity == "important" else "一般预警"
-    severity_color = (
-        POSITIVE_COLOR if card.severity == "important" else WARNING_COLOR
-    )
+    severity_text = {
+        "important": "重要",
+        "warning": "预警",
+        "observation": "观察",
+    }[card.severity] + f"  {card.strength_score}/100"
+    severity_color = {
+        "important": POSITIVE_COLOR,
+        "warning": WARNING_COLOR,
+        "observation": BLUE_COLOR,
+    }[card.severity]
     _draw_right_text(
         draw,
         severity_text,
@@ -310,7 +317,7 @@ def _draw_card(
 
     left = 60
     gap = 12
-    widths = (258, 258, 278, 266)
+    widths = (210, 205, 250, 170, 197)
     boxes = []
     for width in widths:
         boxes.append((left, top + 62, left + width, top + 215))
@@ -318,7 +325,8 @@ def _draw_card(
     _draw_price_metric(draw, boxes[0], card, fonts)
     _draw_iv_metric(draw, boxes[1], card.atm_iv, fonts)
     _draw_oi_metric(draw, boxes[2], card, fonts)
-    _draw_skew_metric(draw, boxes[3], card.rr25, fonts)
+    _draw_pcr_metric(draw, boxes[3], card, fonts)
+    _draw_skew_metric(draw, boxes[4], card.rr25, fonts)
 
     category_names = {
         "price": "价格",
@@ -338,7 +346,7 @@ def _draw_card(
     _draw_fitted_text(
         draw,
         (60, top + 266),
-        f"配合判断：{card.evidence}",
+        f"判断：{card.direction_label}｜{card.evidence}",
         TEXT_COLOR,
         font_path,
         max_width=1080,
@@ -362,6 +370,7 @@ def _metric_box(draw, box, label, active, color, fonts) -> None:
         "price": "期货价格",
         "iv": "ATM IV",
         "oi": "Call / Put 持仓",
+        "pcr": "OI PCR",
         "skew": "RR25 偏度",
     }
     draw.text(
@@ -387,13 +396,13 @@ def _draw_price_metric(draw, box, card, fonts) -> None:
     )
     draw.text(
         (x, y + 36),
-        f"日内涨跌  {change * Decimal('100'):+.2f}%  {_direction_word(change)}",
+        f"涨跌  {change * Decimal('100'):+.2f}%  {_direction_word(change)}",
         fill=color,
         font=fonts["value"],
     )
     draw.text(
         (x, y + 73),
-        "阈值  |日内涨跌幅| > 2.50%",
+        "阈值  |涨跌幅| > 2.50%",
         fill=MUTED_COLOR,
         font=fonts["small"],
     )
@@ -430,7 +439,7 @@ def _draw_iv_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
     )
     draw.text(
         (x, y + 73),
-        f"十日排名 {rank}  均值 {mean}",
+        f"排名 {rank} / 10  均值 {mean}",
         fill=MUTED_COLOR,
         font=fonts["small"],
     )
@@ -472,6 +481,53 @@ def _draw_oi_metric(draw, box, card, fonts) -> None:
         ),
         font=fonts["value"],
     )
+
+
+def _draw_pcr_metric(draw, box, card, fonts) -> None:
+    color = {
+        "confirm": BLUE_COLOR,
+        "conflict": WARNING_COLOR,
+        "neutral": TEXT_COLOR,
+        "unavailable": MUTED_COLOR,
+    }[card.pcr_state]
+    _metric_box(
+        draw,
+        box,
+        "pcr",
+        card.pcr_state in ("confirm", "conflict"),
+        color,
+        fonts,
+    )
+    x, y = box[0] + 14, box[1] + 53
+    current = _compact_ratio(card.oi_pcr)
+    previous = (
+        _compact_ratio(card.previous_oi_pcr)
+    )
+    change = (
+        _compact_percent(card.oi_pcr_change)
+    )
+    draw.text((x, y), f"当前  {current}", fill=TEXT_COLOR, font=fonts["value"])
+    draw.text((x, y + 36), f"昨收  {previous}", fill=MUTED_COLOR, font=fonts["value"])
+    draw.text((x, y + 73), f"变化  {change}", fill=color, font=fonts["small"])
+
+
+def _compact_ratio(value: Decimal | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value:.2E}" if abs(value) >= Decimal("1000") else f"{value:.2f}"
+
+
+def _compact_percent(value: Decimal | None) -> str:
+    if value is None:
+        return "--"
+    percent = value * Decimal("100")
+    return (
+        f"{percent:+.2E}%"
+        if abs(percent) >= Decimal("10000")
+        else f"{percent:+.2f}%"
+    )
+
+
 def _draw_skew_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
     _metric_box(draw, box, "skew", metric.triggered, PURPLE_COLOR, fonts)
     x, y = box[0] + 14, box[1] + 53
@@ -499,9 +555,9 @@ def _draw_skew_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
     draw.text(
         (x, y + 73),
         (
-            "日度基线  上一交易日收盘快照"
+            "基线  上一交易日收盘"
             if metric.change is not None
-            else "日度基线  等待上一交易日收盘快照"
+            else "基线  等待上一交易日"
         ),
         fill=MUTED_COLOR,
         font=fonts["small"],

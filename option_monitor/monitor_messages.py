@@ -125,7 +125,11 @@ def build_anomaly_chart_markdown(
             "skew": "偏度",
         }
         for card in report.cards:
-            level = "重要" if card.severity == "important" else "一般"
+            level = {
+                "important": "重要",
+                "warning": "预警",
+                "observation": "观察",
+            }[card.severity]
             categories = " / ".join(
                 category_names[item] for item in card.trigger_categories
             )
@@ -155,9 +159,23 @@ def build_anomaly_chart_markdown(
                 details.append(
                     f"ΔRR25 {card.rr25.change * Decimal('100'):+.2f} pp"
                 )
+            if card.oi_pcr is not None:
+                previous = (
+                    "--" if card.previous_oi_pcr is None
+                    else f"{card.previous_oi_pcr:.2f}"
+                )
+                change = (
+                    "--" if card.oi_pcr_change is None
+                    else f"{card.oi_pcr_change * Decimal('100'):+.2f}%"
+                )
+                details.append(
+                    f"OI PCR {card.oi_pcr:.2f}（昨 {previous}，{change}）"
+                )
             detail_text = f" | {'；'.join(details)}" if details else ""
             lines.append(
-                f"- {level} | {_product_label(card.product_name, card.product_code, card.underlying)} | "
+                f"- {level} {card.strength_score}/100 | "
+                f"{card.direction_label} | "
+                f"{_product_label(card.product_name, card.product_code, card.underlying)} | "
                 f"{categories}{detail_text}"
             )
         _append_openvlab_delivery(

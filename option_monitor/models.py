@@ -5,6 +5,10 @@ from decimal import Decimal
 from typing import Any, Literal
 
 
+AlertLevel = Literal["observation", "warning", "important"]
+PcrState = Literal["confirm", "conflict", "neutral", "unavailable"]
+
+
 @dataclass(frozen=True)
 class ProductSpec:
     code: str
@@ -212,7 +216,7 @@ class AnomalyChartCard:
     product_code: str
     product_name: str
     underlying: str
-    severity: Literal["important", "warning"]
+    severity: AlertLevel
     trigger_categories: tuple[
         Literal["price", "iv", "oi", "skew"], ...
     ]
@@ -228,6 +232,18 @@ class AnomalyChartCard:
     put_oi_baseline_ready: bool
     ranked_contracts: tuple[ContractOiChange, ...]
     evidence: str
+    oi_pcr: Decimal | None = None
+    previous_oi_pcr: Decimal | None = None
+    oi_pcr_change: Decimal | None = None
+    pcr_state: PcrState = "unavailable"
+    strength_score: int = 0
+    strength_components: tuple[tuple[str, int], ...] = field(
+        default_factory=tuple
+    )
+    effective_dimensions: tuple[str, ...] = field(default_factory=tuple)
+    confirmations: tuple[str, ...] = field(default_factory=tuple)
+    conflicts: tuple[str, ...] = field(default_factory=tuple)
+    direction_label: str = "方向未确认"
 
 
 @dataclass(frozen=True)

@@ -535,7 +535,10 @@ def collect_product(
             safe_ratio(put_turnover_delta, call_turnover_delta)
             if flow_baseline_ready else None
         ),
-        oi_pcr=safe_ratio(put_open_interest, call_open_interest),
+        oi_pcr=(
+            safe_ratio(put_open_interest, call_open_interest)
+            if call_oi_count > 0 and put_oi_count > 0 else None
+        ),
         oi_concentrations=concentrations,
         flow_baseline_ready=flow_baseline_ready,
         oi_baseline_ready=(
