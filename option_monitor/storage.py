@@ -153,6 +153,8 @@ class MonitorStore:
                     product_code TEXT NOT NULL,
                     data_time_ms INTEGER NOT NULL,
                     rr25 TEXT NOT NULL,
+                    call_open_interest INTEGER,
+                    put_open_interest INTEGER,
                     PRIMARY KEY (trading_day, product_code)
                 );
 
@@ -172,6 +174,26 @@ class MonitorStore:
                     "PRAGMA table_info(contract_oi_changes)"
                 )
             }
+            daily_option_close_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(daily_option_closes)"
+                )
+            }
+            if "call_open_interest" not in daily_option_close_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE daily_option_closes
+                    ADD COLUMN call_open_interest INTEGER
+                    """
+                )
+            if "put_open_interest" not in daily_option_close_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE daily_option_closes
+                    ADD COLUMN put_open_interest INTEGER
+                    """
+                )
             if "multiplier" not in contract_oi_columns:
                 connection.execute(
                     "ALTER TABLE contract_oi_changes ADD COLUMN multiplier TEXT"
@@ -582,15 +604,25 @@ class MonitorStore:
         self._write(
             """
             INSERT INTO daily_option_closes (
-                trading_day, product_code, data_time_ms, rr25
-            ) VALUES (?, ?, ?, ?)
+                trading_day, product_code, data_time_ms, rr25,
+                call_open_interest, put_open_interest
+            ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(trading_day, product_code) DO UPDATE SET
                 data_time_ms = excluded.data_time_ms,
-                rr25 = excluded.rr25
+                rr25 = excluded.rr25,
+                call_open_interest = COALESCE(
+                    excluded.call_open_interest,
+                    daily_option_closes.call_open_interest
+                ),
+                put_open_interest = COALESCE(
+                    excluded.put_open_interest,
+                    daily_option_closes.put_open_interest
+                )
             """,
             (
                 close.trading_day, close.product_code,
                 close.data_time_ms, str(close.rr25),
+                close.call_open_interest, close.put_open_interest,
             ),
         )
 
@@ -599,9 +631,11 @@ class MonitorStore:
     ) -> list[DailyOptionClose]:
         rows = self._read_all(
             """
-            SELECT trading_day, product_code, data_time_ms, rr25
+            SELECT trading_day, product_code, data_time_ms, rr25,
+                   call_open_interest, put_open_interest
             FROM (
-                SELECT trading_day, product_code, data_time_ms, rr25
+                SELECT trading_day, product_code, data_time_ms, rr25,
+                       call_open_interest, put_open_interest
                 FROM daily_option_closes
                 WHERE product_code = ?
                 ORDER BY trading_day DESC
@@ -615,6 +649,7 @@ class MonitorStore:
             DailyOptionClose(
                 row["trading_day"], row["product_code"],
                 row["data_time_ms"], Decimal(row["rr25"]),
+                row["call_open_interest"], row["put_open_interest"],
             )
             for row in rows
         ]

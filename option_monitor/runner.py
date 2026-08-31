@@ -23,6 +23,7 @@ from option_monitor.anomaly_interpretation import (
 )
 from option_monitor.anomaly_report import build_anomaly_chart_report
 from option_monitor.anomaly_selection import select_anomaly_delivery
+from option_monitor.strength_log import append_strength_records
 from option_monitor.collector import (
     MainOptionUnavailable,
     ProductCollection,
@@ -888,6 +889,8 @@ class MonitorRunner:
                 product_code=code,
                 data_time_ms=option_snapshot.data_time_ms,
                 rr25=option_snapshot.rr25,
+                call_open_interest=option_snapshot.call_open_interest,
+                put_open_interest=option_snapshot.put_open_interest,
             )
             existing_option = next(
                 (
@@ -922,6 +925,7 @@ class MonitorRunner:
         triggers = []
         anomalies = []
         option_histories: dict[str, tuple[DailyOptionClose, ...]] = {}
+        market_histories: dict[str, tuple[DailyMarketClose, ...]] = {}
         for product in self.products:
             collection = collections.get(product.code)
             if collection is None:
@@ -957,6 +961,7 @@ class MonitorRunner:
                 if close.trading_day < collection.market.trading_day
             ][-11:]
             option_histories[product.code] = tuple(prior_options)
+            market_histories[product.code] = tuple(prior_markets)
             anomaly = evaluate_option_anomaly(
                 collection.market,
                 option_snapshot,
@@ -1031,7 +1036,16 @@ class MonitorRunner:
                                 product.code: product.name
                                 for product in self.products
                             },
+                            market_histories=market_histories,
                         )
+                        try:
+                            append_strength_records(
+                                results,
+                                self.settings.strength_log_path,
+                                run_at_ms=run_at_ms,
+                            )
+                        except Exception:
+                            pass
                         selection = select_anomaly_delivery(
                             anomaly_report, results
                         )

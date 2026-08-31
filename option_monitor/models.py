@@ -171,6 +171,8 @@ class DailyOptionClose:
     product_code: str
     data_time_ms: int
     rr25: Decimal
+    call_open_interest: int | None = None
+    put_open_interest: int | None = None
 
 
 @dataclass(frozen=True)

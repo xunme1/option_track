@@ -9,6 +9,7 @@ from option_monitor.models import (
     AlertLevel,
     AnomalyChartCard,
     AnomalyChartReport,
+    DailyMarketClose,
     DailyOptionClose,
     FuturesChangeQuote,
 )
@@ -29,6 +30,10 @@ OI_FULL = Decimal("0.05")
 PCR_EFFECTIVE = Decimal("0.10")
 PCR_FULL = Decimal("0.25")
 ONE = Decimal("1")
+# 各维度强度改用品种自身历史分位数所需的最小历史样本数；
+# 样本不足时回落到上面的固定阈值线性打分。
+MIN_HISTORY = 10
+COMPONENT_CAPS = (20, 25, 20, 20, 15)
 
 
 class AnomalyInterpretationError(RuntimeError):
@@ -64,6 +69,11 @@ class InterpretationFacts:
     oi_pcr: Decimal | None = None
     previous_oi_pcr: Decimal | None = None
     oi_pcr_change: Decimal | None = None
+    # 品种自身历史分布（用于分位数强度归一化，样本不足时为空）
+    price_close_change: Decimal | None = None
+    price_change_history: tuple[Decimal, ...] = ()
+    oi_rate_history: tuple[Decimal, ...] = ()
+    pcr_change_history: tuple[Decimal, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -105,6 +115,7 @@ def build_anomaly_interpretation(
     iv_histories: Mapping[str, Sequence[Decimal]],
     option_histories: Mapping[str, Sequence[DailyOptionClose]],
     product_names: Mapping[str, str],
+    market_histories: Mapping[str, Sequence[DailyMarketClose]] | None = None,
 ) -> str:
     try:
         return _build_anomaly_interpretation(
@@ -114,6 +125,7 @@ def build_anomaly_interpretation(
             iv_histories,
             option_histories,
             product_names,
+            market_histories,
         )
     except AnomalyInterpretationError:
         raise
@@ -130,6 +142,7 @@ def _build_anomaly_interpretation(
     iv_histories: Mapping[str, Sequence[Decimal]],
     option_histories: Mapping[str, Sequence[DailyOptionClose]],
     product_names: Mapping[str, str],
+    market_histories: Mapping[str, Sequence[DailyMarketClose]] | None = None,
 ) -> str:
     results_by_code = build_interpretation_results(
         report,
@@ -138,6 +151,7 @@ def _build_anomaly_interpretation(
         iv_histories,
         option_histories,
         product_names,
+        market_histories,
     )
 
     results: list[InterpretationResult] = []
@@ -165,6 +179,7 @@ def build_interpretation_results(
     iv_histories: Mapping[str, Sequence[Decimal]],
     option_histories: Mapping[str, Sequence[DailyOptionClose]],
     product_names: Mapping[str, str],
+    market_histories: Mapping[str, Sequence[DailyMarketClose]] | None = None,
 ) -> dict[str, InterpretationResult]:
     try:
         return _build_interpretation_results(
@@ -174,6 +189,7 @@ def build_interpretation_results(
             iv_histories,
             option_histories,
             product_names,
+            market_histories,
         )
     except AnomalyInterpretationError:
         raise
@@ -190,7 +206,9 @@ def _build_interpretation_results(
     iv_histories: Mapping[str, Sequence[Decimal]],
     option_histories: Mapping[str, Sequence[DailyOptionClose]],
     product_names: Mapping[str, str],
+    market_histories: Mapping[str, Sequence[DailyMarketClose]] | None = None,
 ) -> dict[str, InterpretationResult]:
+    market_histories = market_histories or {}
     cards = {card.product_code: card for card in report.cards}
     facts_by_code = {
         code: _extract_facts(
@@ -199,6 +217,7 @@ def _build_interpretation_results(
             iv_histories.get(code, ()),
             option_histories.get(code, ()),
             cards.get(code),
+            market_histories.get(code, ()),
         )
         for code, collection in collections.items()
     }
@@ -240,10 +259,19 @@ def interpret_facts(facts: InterpretationFacts) -> InterpretationResult:
 
 
 def _assess_strength(facts: InterpretationFacts) -> _StrengthAssessment:
-    price = min(abs(facts.price_change or ZERO) / PRICE_FULL, ONE)
+    price = _normalized_strength(
+        (
+            abs(facts.price_close_change)
+            if facts.price_close_change is not None else None
+        ),
+        facts.price_change_history,
+        fallback=(
+            min(abs(facts.price_change or ZERO) / PRICE_FULL, ONE)
+        ),
+    )
     iv = _iv_strength(facts)
     rr25 = _rr25_strength(facts)
-    oi = ZERO
+    oi_rate: Decimal | None = None
     previous_total = (
         (facts.call_pre_open_interest or 0)
         + (facts.put_pre_open_interest or 0)
@@ -256,10 +284,25 @@ def _assess_strength(facts: InterpretationFacts) -> _StrengthAssessment:
         oi_rate = Decimal(
             abs(facts.call_oi_delta) + abs(facts.put_oi_delta)
         ) / Decimal(previous_total)
-        oi = min(oi_rate / OI_FULL, ONE)
-    pcr = ZERO
-    if facts.oi_pcr_change is not None:
-        pcr = min(abs(facts.oi_pcr_change) / PCR_FULL, ONE)
+    oi = _normalized_strength(
+        oi_rate,
+        facts.oi_rate_history,
+        fallback=(
+            min(oi_rate / OI_FULL, ONE) if oi_rate is not None else ZERO
+        ),
+    )
+    pcr_change_abs = (
+        abs(facts.oi_pcr_change)
+        if facts.oi_pcr_change is not None else None
+    )
+    pcr = _normalized_strength(
+        pcr_change_abs,
+        facts.pcr_change_history,
+        fallback=(
+            min(pcr_change_abs / PCR_FULL, ONE)
+            if pcr_change_abs is not None else ZERO
+        ),
+    )
     weighted = (
         ("价格", price * Decimal("20")),
         ("ATM IV", iv * Decimal("25")),
@@ -272,6 +315,10 @@ def _assess_strength(facts: InterpretationFacts) -> _StrengthAssessment:
         for name, value in weighted
     )
     score = min(100, sum(value for _, value in components))
+    has_maxed_dimension = any(
+        value >= Decimal(cap)
+        for (_, value), cap in zip(weighted, COMPONENT_CAPS)
+    )
 
     effective: list[str] = []
     price_direction: Literal["bullish", "bearish"] | None = None
@@ -346,6 +393,7 @@ def _assess_strength(facts: InterpretationFacts) -> _StrengthAssessment:
         len(effective),
         len(confirmations),
         len(conflicts),
+        has_maxed_dimension,
     )
     return _StrengthAssessment(
         score=score,
@@ -364,9 +412,12 @@ def _alert_level(
     effective_count: int,
     confirmation_count: int,
     conflict_count: int,
+    has_maxed_dimension: bool = False,
 ) -> AlertLevel:
     if effective_count < 2 or score < 40:
-        return "observation"
+        # 单一维度打满（如价格暴涨暴跌超 5%）即便缺少其他维度配合，
+        # 也至少提到预警，避免极端行情被埋进“观察”。
+        return "warning" if has_maxed_dimension else "observation"
     if (
         score >= 70
         and effective_count >= 3
@@ -374,6 +425,22 @@ def _alert_level(
     ) or (score >= 60 and conflict_count >= 2):
         return "important"
     return "warning"
+
+
+def _normalized_strength(
+    current: Decimal | None,
+    history: Sequence[Decimal],
+    *,
+    fallback: Decimal,
+) -> Decimal:
+    """品种自身历史分位数强度；样本不足时回落到固定阈值打分。
+
+    分位数 = 历史样本中严格小于当前值的比例，取值 [0, 1]。
+    """
+    if current is None or len(history) < MIN_HISTORY:
+        return fallback
+    below = sum(1 for value in history if value < current)
+    return Decimal(below) / Decimal(len(history))
 
 
 def _iv_strength(facts: InterpretationFacts) -> Decimal:
@@ -434,6 +501,7 @@ def _extract_facts(
     iv_history: Sequence[Decimal],
     option_history: Sequence[DailyOptionClose],
     card: AnomalyChartCard | None,
+    market_history: Sequence[DailyMarketClose] = (),
 ) -> InterpretationFacts:
     market = collection.market
     option = collection.option_snapshot
@@ -483,6 +551,48 @@ def _extract_facts(
         and previous_pcr is not None
         and previous_pcr > ZERO
         else None
+    )
+    # 品种自身历史分布：价格用收盘价环比，持仓/PCR 用连续两个收盘快照推导，
+    # 与盘中“相对昨仓”的口径一致。
+    selected_market = tuple(market_history[-11:])
+    price_change_history = tuple(
+        abs(current.close_price / previous.close_price - ONE)
+        for previous, current in zip(selected_market, selected_market[1:])
+        if previous.close_price > ZERO
+    )
+    previous_close = (
+        selected_market[-1].close_price if selected_market else None
+    )
+    price_close_change = (
+        quote.last_price / previous_close - ONE
+        if quote is not None
+        and previous_close is not None
+        and previous_close > ZERO
+        else None
+    )
+    oi_closes = tuple(
+        (close.call_open_interest, close.put_open_interest)
+        for close in option_history[-11:]
+    )
+    oi_rate_history = tuple(
+        Decimal(
+            abs(call - previous_call) + abs(put - previous_put)
+        ) / Decimal(previous_call + previous_put)
+        for (previous_call, previous_put), (call, put) in zip(
+            oi_closes, oi_closes[1:]
+        )
+        if None not in (previous_call, previous_put, call, put)
+        and previous_call + previous_put > 0
+    )
+    pcr_closes = tuple(
+        Decimal(put) / Decimal(call)
+        for call, put in oi_closes
+        if call is not None and put is not None and call > 0
+    )
+    pcr_change_history = tuple(
+        abs(current / previous - ONE)
+        for previous, current in zip(pcr_closes, pcr_closes[1:])
+        if previous > ZERO
     )
     categories = frozenset(card.trigger_categories if card else ())
     return InterpretationFacts(
@@ -542,6 +652,10 @@ def _extract_facts(
         oi_pcr=current_pcr,
         previous_oi_pcr=previous_pcr,
         oi_pcr_change=pcr_change,
+        price_close_change=price_close_change,
+        price_change_history=price_change_history,
+        oi_rate_history=oi_rate_history,
+        pcr_change_history=pcr_change_history,
     )
 
 

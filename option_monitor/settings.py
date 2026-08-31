@@ -109,6 +109,10 @@ class MonitorSettings:
     def delivery_state_path(self) -> Path:
         return self.root / "state" / "dingtalk_delivery_state.json"
 
+    @property
+    def strength_log_path(self) -> Path:
+        return self.root / "state" / "strength_scores.jsonl"
+
 
 def load_monitor_settings(root: Path) -> MonitorSettings:
     load_env_file(root / ".env")
