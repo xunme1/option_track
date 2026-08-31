@@ -882,7 +882,7 @@ class MonitorRunner:
             ):
                 self.store.save_daily_market_close(market_candidate)
             option_snapshot = collection.option_snapshot
-            if option_snapshot is None or option_snapshot.rr25 is None:
+            if option_snapshot is None:
                 continue
             option_candidate = DailyOptionClose(
                 trading_day=collection.market.trading_day,

@@ -510,10 +510,15 @@ def _extract_facts(
     selected_iv = tuple(iv_history[-10:])
     previous_iv = selected_iv[-1] if selected_iv else None
     complete_iv = len(selected_iv) == 10
-    selected_rr25 = tuple(
+    selected_rr25_values = tuple(
         item.rr25 for item in option_history[-11:]
     )
-    previous_rr25 = selected_rr25[-1] if selected_rr25 else None
+    previous_rr25 = (
+        selected_rr25_values[-1] if selected_rr25_values else None
+    )
+    selected_rr25 = tuple(
+        value for value in selected_rr25_values if value is not None
+    )
     rr25_changes = tuple(
         abs(current - previous)
         for previous, current in zip(selected_rr25, selected_rr25[1:])

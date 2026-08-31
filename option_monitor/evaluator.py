@@ -41,7 +41,15 @@ def evaluate_option_anomaly(
     iv_triggered = iv_high_alert(
         market.atm_iv, list(iv_values), iv_mean_multiplier
     )
-    rr_values = tuple(close.rr25 for close in previous_option_closes[-11:])
+    selected_rr_values = tuple(
+        close.rr25 for close in previous_option_closes[-11:]
+    )
+    rr_values = tuple(
+        value for value in selected_rr_values if value is not None
+    )
+    previous_rr25 = (
+        selected_rr_values[-1] if selected_rr_values else None
+    )
     skew_triggered = (
         option.rr25 is not None
         and skew_change_alert(
@@ -55,8 +63,8 @@ def evaluate_option_anomaly(
         market.atm_iv - iv_values[-1] if iv_values else None
     )
     delta_rr25 = (
-        option.rr25 - rr_values[-1]
-        if option.rr25 is not None and rr_values else None
+        option.rr25 - previous_rr25
+        if option.rr25 is not None and previous_rr25 is not None else None
     )
     side = _anomaly_side(option, skew_triggered, delta_rr25)
     evidence = _evidence(side, delta_iv, option, price_quote)

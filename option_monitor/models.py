@@ -170,7 +170,7 @@ class DailyOptionClose:
     trading_day: str
     product_code: str
     data_time_ms: int
-    rr25: Decimal
+    rr25: Decimal | None
     call_open_interest: int | None = None
     put_open_interest: int | None = None
 

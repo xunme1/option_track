@@ -152,7 +152,7 @@ class MonitorStore:
                     trading_day TEXT NOT NULL,
                     product_code TEXT NOT NULL,
                     data_time_ms INTEGER NOT NULL,
-                    rr25 TEXT NOT NULL,
+                    rr25 TEXT,
                     call_open_interest INTEGER,
                     put_open_interest INTEGER,
                     PRIMARY KEY (trading_day, product_code)
@@ -175,11 +175,62 @@ class MonitorStore:
                 )
             }
             daily_option_close_columns = {
-                row[1]
+                row[1]: row
                 for row in connection.execute(
                     "PRAGMA table_info(daily_option_closes)"
                 )
             }
+            rr25_column = daily_option_close_columns.get("rr25")
+            if rr25_column is not None and rr25_column[3]:
+                call_column = (
+                    "call_open_interest"
+                    if "call_open_interest" in daily_option_close_columns
+                    else "NULL"
+                )
+                put_column = (
+                    "put_open_interest"
+                    if "put_open_interest" in daily_option_close_columns
+                    else "NULL"
+                )
+                connection.execute(
+                    """
+                    ALTER TABLE daily_option_closes
+                    RENAME TO daily_option_closes_not_null_legacy
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE daily_option_closes (
+                        trading_day TEXT NOT NULL,
+                        product_code TEXT NOT NULL,
+                        data_time_ms INTEGER NOT NULL,
+                        rr25 TEXT,
+                        call_open_interest INTEGER,
+                        put_open_interest INTEGER,
+                        PRIMARY KEY (trading_day, product_code)
+                    )
+                    """
+                )
+                connection.execute(
+                    f"""
+                    INSERT INTO daily_option_closes (
+                        trading_day, product_code, data_time_ms, rr25,
+                        call_open_interest, put_open_interest
+                    )
+                    SELECT trading_day, product_code, data_time_ms, rr25,
+                           {call_column}, {put_column}
+                    FROM daily_option_closes_not_null_legacy
+                    """
+                )
+                connection.execute(
+                    "DROP TABLE daily_option_closes_not_null_legacy"
+                )
+                daily_option_close_columns = {
+                    row[1]: row
+                    for row in connection.execute(
+                        "PRAGMA table_info(daily_option_closes)"
+                    )
+                }
             if "call_open_interest" not in daily_option_close_columns:
                 connection.execute(
                     """
@@ -609,7 +660,10 @@ class MonitorStore:
             ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(trading_day, product_code) DO UPDATE SET
                 data_time_ms = excluded.data_time_ms,
-                rr25 = excluded.rr25,
+                rr25 = COALESCE(
+                    excluded.rr25,
+                    daily_option_closes.rr25
+                ),
                 call_open_interest = COALESCE(
                     excluded.call_open_interest,
                     daily_option_closes.call_open_interest
@@ -621,7 +675,7 @@ class MonitorStore:
             """,
             (
                 close.trading_day, close.product_code,
-                close.data_time_ms, str(close.rr25),
+                close.data_time_ms, _optional_text(close.rr25),
                 close.call_open_interest, close.put_open_interest,
             ),
         )
@@ -648,7 +702,10 @@ class MonitorStore:
         return [
             DailyOptionClose(
                 row["trading_day"], row["product_code"],
-                row["data_time_ms"], Decimal(row["rr25"]),
+                row["data_time_ms"], (
+                    Decimal(row["rr25"])
+                    if row["rr25"] is not None else None
+                ),
                 row["call_open_interest"], row["put_open_interest"],
             )
             for row in rows

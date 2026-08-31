@@ -261,16 +261,16 @@ def _rr_metric(
     # RR25 is shown against the latest completed trading-day baseline only.
     # Do not calculate or expose a historical rank/mean until that separate
     # monitoring rule is intentionally reintroduced.
-    selected = tuple(close.rr25 for close in history[-1:])
+    previous = history[-1].rr25 if history else None
     change = (
-        current - selected[-1]
-        if current is not None and selected else None
+        current - previous
+        if current is not None and previous is not None else None
     )
     return AnomalyMetric(
         current=current,
         change=change,
         rank=None,
-        history_count=len(selected),
+        history_count=1 if previous is not None else 0,
         history_mean=None,
         triggered=triggered,
         available=current is not None,

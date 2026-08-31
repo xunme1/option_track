@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 
 from option_monitor.anomaly_interpretation import _extract_facts
@@ -151,6 +152,20 @@ def test_extract_facts_tolerates_missing_oi_in_history():
     )
     assert facts.oi_rate_history == ()
     assert facts.pcr_change_history == ()
+
+
+def test_missing_rr25_does_not_break_oi_and_pcr_history():
+    closes = list(option_closes())
+    closes[-1] = replace(closes[-1], rr25=None)
+
+    facts = _extract_facts(
+        make_collection(), None, (), tuple(closes), None, ()
+    )
+
+    assert facts.delta_rr25 is None
+    assert facts.rr25_history_count == 9
+    assert len(facts.oi_rate_history) == 10
+    assert len(facts.pcr_change_history) == 10
 
 
 def test_extract_facts_without_market_history():
