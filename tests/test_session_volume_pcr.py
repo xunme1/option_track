@@ -110,3 +110,36 @@ def test_session_volume_pcr_independent_from_delta_volume_pcr():
     snapshot = collect(calls, puts).option_snapshot
     assert snapshot.volume_pcr is None
     assert snapshot.session_volume_pcr == Decimal("0.5")
+
+
+def test_session_volume_pcr_survives_storage_roundtrip(tmp_path):
+    """报告流程会复用库存快照，session_volume_pcr 必须持久化。"""
+    from option_monitor.storage import MonitorStore
+
+    store = MonitorStore(tmp_path / "monitor.sqlite3")
+    store.initialize()
+    snapshot = collect(
+        [option_row("sc2610C700", "C", 200)],
+        [option_row("sc2610P600", "P", 100)],
+    ).option_snapshot
+    store.save_option_snapshot(snapshot)
+    loaded = store.option_snapshot_at("sc", snapshot.run_at_ms)
+    assert loaded is not None
+    assert loaded.session_volume_pcr == Decimal("0.5")
+
+
+def test_session_volume_pcr_legacy_row_loads_as_none(tmp_path):
+    """迁移前的旧行没有该列数据，读出应为 None 而不是报错。"""
+    from option_monitor.storage import MonitorStore
+
+    store = MonitorStore(tmp_path / "monitor.sqlite3")
+    store.initialize()
+    snapshot = collect(
+        [option_row("sc2610C700", "C", 200)],
+        [option_row("sc2610P600", "P", 100)],
+    ).option_snapshot
+    object.__setattr__(snapshot, "session_volume_pcr", None)
+    store.save_option_snapshot(snapshot)
+    loaded = store.option_snapshot_at("sc", snapshot.run_at_ms)
+    assert loaded is not None
+    assert loaded.session_volume_pcr is None

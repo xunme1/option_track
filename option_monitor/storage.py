@@ -138,6 +138,7 @@ class MonitorStore:
                     volume_pcr TEXT,
                     turnover_pcr TEXT,
                     oi_pcr TEXT,
+                    session_volume_pcr TEXT,
                     oi_concentrations_json TEXT NOT NULL,
                     flow_baseline_ready INTEGER NOT NULL,
                     oi_baseline_ready INTEGER NOT NULL,
@@ -174,6 +175,19 @@ class MonitorStore:
                     "PRAGMA table_info(contract_oi_changes)"
                 )
             }
+            option_snapshot_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(option_analytics_snapshots)"
+                )
+            }
+            if "session_volume_pcr" not in option_snapshot_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE option_analytics_snapshots
+                    ADD COLUMN session_volume_pcr TEXT
+                    """
+                )
             daily_option_close_columns = {
                 row[1]: row
                 for row in connection.execute(
@@ -591,10 +605,11 @@ class MonitorStore:
                 underlying, expire, rr25, call_volume_delta, put_volume_delta,
                 call_turnover_delta, put_turnover_delta, call_open_interest,
                 put_open_interest, call_pre_open_interest, put_pre_open_interest,
-                volume_pcr, turnover_pcr, oi_pcr, oi_concentrations_json,
+                volume_pcr, turnover_pcr, oi_pcr, session_volume_pcr,
+                oi_concentrations_json,
                 flow_baseline_ready, oi_baseline_ready, next_expire, next_atm_iv,
                 call_oi_baseline_ready, put_oi_baseline_ready
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(run_at_ms, product_code) DO UPDATE SET
                 data_time_ms = excluded.data_time_ms,
                 trading_day = excluded.trading_day,
@@ -613,6 +628,7 @@ class MonitorStore:
                 volume_pcr = excluded.volume_pcr,
                 turnover_pcr = excluded.turnover_pcr,
                 oi_pcr = excluded.oi_pcr,
+                session_volume_pcr = excluded.session_volume_pcr,
                 oi_concentrations_json = excluded.oi_concentrations_json,
                 flow_baseline_ready = excluded.flow_baseline_ready,
                 oi_baseline_ready = excluded.oi_baseline_ready,
@@ -631,7 +647,9 @@ class MonitorStore:
                 snapshot.call_pre_open_interest, snapshot.put_pre_open_interest,
                 _optional_text(snapshot.volume_pcr),
                 _optional_text(snapshot.turnover_pcr),
-                _optional_text(snapshot.oi_pcr), concentrations,
+                _optional_text(snapshot.oi_pcr),
+                _optional_text(snapshot.session_volume_pcr),
+                concentrations,
                 int(snapshot.flow_baseline_ready), int(snapshot.oi_baseline_ready),
                 snapshot.next_expire, _optional_text(snapshot.next_atm_iv),
                 int(snapshot.call_oi_baseline_ready),
@@ -1024,6 +1042,7 @@ class MonitorStore:
             volume_pcr=_optional_decimal(row["volume_pcr"]),
             turnover_pcr=_optional_decimal(row["turnover_pcr"]),
             oi_pcr=_optional_decimal(row["oi_pcr"]),
+            session_volume_pcr=_optional_decimal(row["session_volume_pcr"]),
             oi_concentrations=tuple(concentrations),
             flow_baseline_ready=bool(row["flow_baseline_ready"]),
             oi_baseline_ready=bool(row["oi_baseline_ready"]),
