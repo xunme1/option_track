@@ -226,6 +226,7 @@ def _build_card(
         oi_pcr=current_pcr,
         previous_oi_pcr=previous_pcr,
         oi_pcr_change=pcr_change,
+        session_volume_pcr=option.session_volume_pcr,
     )
 
 

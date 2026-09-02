@@ -171,6 +171,8 @@ def build_anomaly_chart_markdown(
                 details.append(
                     f"OI PCR {card.oi_pcr:.2f}（昨 {previous}，{change}）"
                 )
+            if card.session_volume_pcr is not None:
+                details.append(f"Volume PCR {card.session_volume_pcr:.2f}")
             detail_text = f" | {'；'.join(details)}" if details else ""
             lines.append(
                 f"- {level} {card.strength_score}/100 | "

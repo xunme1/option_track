@@ -349,6 +349,10 @@ def collect_product(
     put_contract_count = 0
     call_volume_delta = 0
     put_volume_delta = 0
+    call_volume_total = 0
+    put_volume_total = 0
+    call_volume_count = 0
+    put_volume_count = 0
     call_turnover_delta = ZERO
     put_turnover_delta = ZERO
     comparable_call_count = 0
@@ -388,6 +392,13 @@ def collect_product(
                 raise HitickError("option timestamp is in the future")
         except HitickError:
             continue
+        # 累计成交量（全链、无需基线），供 session Volume PCR 使用
+        if side == "C":
+            call_volume_total += state.volume
+            call_volume_count += 1
+        else:
+            put_volume_total += state.volume
+            put_volume_count += 1
         amount = cumulative_turnover(
             state.volume,
             state.average_price,
@@ -538,6 +549,13 @@ def collect_product(
         oi_pcr=(
             safe_ratio(put_open_interest, call_open_interest)
             if call_oi_count > 0 and put_oi_count > 0 else None
+        ),
+        session_volume_pcr=(
+            safe_ratio(put_volume_total, call_volume_total)
+            if call_volume_count > 0
+            and put_volume_count > 0
+            and call_volume_total > 0
+            else None
         ),
         oi_concentrations=concentrations,
         flow_baseline_ready=flow_baseline_ready,

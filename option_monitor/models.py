@@ -163,6 +163,9 @@ class OptionAnalyticsSnapshot:
     next_atm_iv: Decimal | None = None
     call_oi_baseline_ready: bool = False
     put_oi_baseline_ready: bool = False
+    # 全链累计 Volume PCR（Put 成交 / Call 成交），无需基线；
+    # 与 volume_pcr（两次运行间增量口径）语义不同，勿混用
+    session_volume_pcr: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -237,6 +240,7 @@ class AnomalyChartCard:
     oi_pcr: Decimal | None = None
     previous_oi_pcr: Decimal | None = None
     oi_pcr_change: Decimal | None = None
+    session_volume_pcr: Decimal | None = None
     pcr_state: PcrState = "unavailable"
     strength_score: int = 0
     strength_components: tuple[tuple[str, int], ...] = field(

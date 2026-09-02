@@ -27,6 +27,7 @@ PRICE_PANEL = (255, 241, 242)
 IV_PANEL = (239, 246, 255)
 OI_PANEL = (255, 247, 237)
 PCR_PANEL = (240, 253, 250)
+VPCR_PANEL = (254, 252, 232)
 SKEW_PANEL = (250, 245, 255)
 TEXT = (31, 41, 55)
 MUTED = (107, 114, 128)
@@ -147,9 +148,9 @@ def _draw_metrics(draw, data: InstantProductChartData, fonts) -> None:
     top = 195
     left = 42
     gap = 16
-    width = (WIDTH - 84 - gap * 4) // 5
+    width = (WIDTH - 84 - gap * 5) // 6
     boxes = []
-    for index in range(5):
+    for index in range(6):
         x1 = left + index * (width + gap)
         boxes.append((x1, top, x1 + width, 399))
 
@@ -157,7 +158,8 @@ def _draw_metrics(draw, data: InstantProductChartData, fonts) -> None:
     _draw_iv(draw, boxes[1], data, fonts)
     _draw_oi(draw, boxes[2], data, fonts)
     _draw_pcr(draw, boxes[3], data, fonts)
-    _draw_skew(draw, boxes[4], data, fonts)
+    _draw_volume_pcr(draw, boxes[4], data, fonts)
+    _draw_skew(draw, boxes[5], data, fonts)
 
 
 def _metric_box(draw, box, label: str, fill, color, fonts) -> tuple[int, int]:
@@ -178,7 +180,7 @@ def _draw_price(draw, box, data: InstantProductChartData, fonts) -> None:
         return
     draw.text(
         (x, y + 45),
-        f"日内涨跌  {change * Decimal('100'):+.2f}%  {_direction_word(change)}",
+        f"日内  {change * Decimal('100'):+.2f}%",
         fill=_direction_color(change),
         font=fonts["body"],
     )
@@ -192,8 +194,8 @@ def _draw_iv(draw, box, data: InstantProductChartData, fonts) -> None:
     draw.text(
         (x, y), f"当前  {iv * Decimal('100'):.2f}%", fill=TEXT, font=fonts["value"]
     )
-    draw.text((x, y + 45), "ΔIV  即时采集不计算", fill=MUTED, font=fonts["body"])
-    draw.text((x, y + 84), "期权数据  Orange Hitick", fill=MUTED, font=fonts["small"])
+    draw.text((x, y + 45), "ΔIV  单次不计算", fill=MUTED, font=fonts["body"])
+    draw.text((x, y + 84), "数据  Orange Hitick", fill=MUTED, font=fonts["small"])
 
 
 def _draw_oi(draw, box, data: InstantProductChartData, fonts) -> None:
@@ -210,7 +212,7 @@ def _draw_oi(draw, box, data: InstantProductChartData, fonts) -> None:
     draw.text(
         (x, y + 45), f"Put   {_oi_text(put_delta)}", fill=_oi_color(put_delta), font=fonts["body"]
     )
-    draw.text((x, y + 84), "较昨持仓：当前 - 昨持仓", fill=MUTED, font=fonts["small"])
+    draw.text((x, y + 84), "较昨持仓变化", fill=MUTED, font=fonts["small"])
 
 
 def _draw_pcr(draw, box, data: InstantProductChartData, fonts) -> None:
@@ -248,6 +250,24 @@ def _draw_pcr(draw, box, data: InstantProductChartData, fonts) -> None:
     )
 
 
+def _draw_volume_pcr(draw, box, data: InstantProductChartData, fonts) -> None:
+    x, y = _metric_box(draw, box, "Volume PCR", VPCR_PANEL, ORANGE, fonts)
+    option = data.collection.option_snapshot
+    value = option.session_volume_pcr if option is not None else None
+    current_text = "--" if value is None else f"{value:.2f}"
+    draw.text((x, y), f"当前  {current_text}", fill=TEXT, font=fonts["value"])
+    if value is None:
+        bias = "数据暂不可用"
+    elif value >= Decimal("1.25"):
+        bias = "put 成交活跃"
+    elif value <= Decimal("0.8"):
+        bias = "call 成交活跃"
+    else:
+        bias = "成交相对均衡"
+    draw.text((x, y + 45), bias, fill=MUTED, font=fonts["body"])
+    draw.text((x, y + 84), "当日累计 Put÷Call", fill=MUTED, font=fonts["small"])
+
+
 def _draw_skew(draw, box, data: InstantProductChartData, fonts) -> None:
     x, y = _metric_box(draw, box, "RR25 偏度", SKEW_PANEL, PURPLE, fonts)
     option = data.collection.option_snapshot
@@ -269,9 +289,9 @@ def _draw_skew(draw, box, data: InstantProductChartData, fonts) -> None:
         font=fonts["body"],
     )
     baseline_text = (
-        f"基线  {data.rr25_baseline_trading_day} 收盘快照"
+        f"基线  {data.rr25_baseline_trading_day} 收盘"
         if data.rr25_baseline_trading_day is not None
-        else "基线  等待上一交易日收盘快照"
+        else "基线  等待上一交易日"
     )
     draw.text((x, y + 84), baseline_text, fill=MUTED, font=fonts["small"])
 
@@ -282,7 +302,7 @@ def _draw_footer(draw, data: InstantProductChartData, fonts) -> None:
     )
     draw.text(
         (44, 430),
-        f"期权快照时间  {market_time:%Y-%m-%d %H:%M:%S}  |  ΔRR25 仅读取本地日度基线  |  OI PCR = Put / Call 总持仓（昨收=昨持仓比）",
+        f"期权快照时间  {market_time:%Y-%m-%d %H:%M:%S}  |  ΔRR25 仅读取本地日度基线  |  OI PCR = Put / Call 总持仓（昨收=昨持仓比）  |  Volume PCR = Put / Call 当日累计成交量",
         fill=MUTED,
         font=fonts["small"],
     )
@@ -295,15 +315,11 @@ def _oi_delta(current: int, previous: int, ready: bool) -> int | None:
 def _oi_text(value: int | None) -> str:
     if value is None:
         return "基线不足"
-    return f"{value:+d} 张 {'增仓' if value > 0 else '减仓' if value < 0 else '持平'}"
+    return f"{value:+d} 张"
 
 
 def _oi_color(value: int | None) -> tuple[int, int, int]:
     return MUTED if value is None else _direction_color(Decimal(value))
-
-
-def _direction_word(value: Decimal) -> str:
-    return "上涨" if value > 0 else "下跌" if value < 0 else "持平"
 
 
 def _direction_color(value: Decimal) -> tuple[int, int, int]:

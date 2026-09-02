@@ -42,6 +42,7 @@ TRIGGER_BACKGROUNDS = {
     "iv": (239, 246, 255),
     "oi": (255, 247, 237),
     "pcr": (240, 253, 250),
+    "vpcr": (254, 252, 232),
     "skew": (250, 245, 255),
 }
 NEUTRAL_BACKGROUND = (246, 247, 249)
@@ -317,7 +318,7 @@ def _draw_card(
 
     left = 60
     gap = 12
-    widths = (210, 205, 250, 170, 197)
+    widths = (180, 176, 216, 150, 150, 148)
     boxes = []
     for width in widths:
         boxes.append((left, top + 62, left + width, top + 215))
@@ -326,7 +327,8 @@ def _draw_card(
     _draw_iv_metric(draw, boxes[1], card.atm_iv, fonts)
     _draw_oi_metric(draw, boxes[2], card, fonts)
     _draw_pcr_metric(draw, boxes[3], card, fonts)
-    _draw_skew_metric(draw, boxes[4], card.rr25, fonts)
+    _draw_volume_pcr_metric(draw, boxes[4], card, fonts)
+    _draw_skew_metric(draw, boxes[5], card.rr25, fonts)
 
     category_names = {
         "price": "价格",
@@ -371,6 +373,7 @@ def _metric_box(draw, box, label, active, color, fonts) -> None:
         "iv": "ATM IV",
         "oi": "Call / Put 持仓",
         "pcr": "OI PCR",
+        "vpcr": "Volume PCR",
         "skew": "RR25 偏度",
     }
     draw.text(
@@ -396,13 +399,13 @@ def _draw_price_metric(draw, box, card, fonts) -> None:
     )
     draw.text(
         (x, y + 36),
-        f"涨跌  {change * Decimal('100'):+.2f}%  {_direction_word(change)}",
+        f"涨跌  {change * Decimal('100'):+.2f}%",
         fill=color,
         font=fonts["value"],
     )
     draw.text(
         (x, y + 73),
-        "阈值  |涨跌幅| > 2.50%",
+        "阈值  |涨跌| > 2.5%",
         fill=MUTED_COLOR,
         font=fonts["small"],
     )
@@ -439,7 +442,7 @@ def _draw_iv_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
     )
     draw.text(
         (x, y + 73),
-        f"排名 {rank} / 10  均值 {mean}",
+        f"排名 {rank}/10  均值 {mean}",
         fill=MUTED_COLOR,
         font=fonts["small"],
     )
@@ -457,11 +460,11 @@ def _draw_oi_metric(draw, box, card, fonts) -> None:
     x, y = box[0] + 14, box[1] + 53
     call_text = (
         "基线不足" if card.call_oi_delta is None
-        else f"{card.call_oi_delta:+d} 张 {_oi_word(card.call_oi_delta)}"
+        else f"{card.call_oi_delta:+d} 张"
     )
     put_text = (
         "基线不足" if card.put_oi_delta is None
-        else f"{card.put_oi_delta:+d} 张 {_oi_word(card.put_oi_delta)}"
+        else f"{card.put_oi_delta:+d} 张"
     )
     draw.text(
         (x, y),
@@ -511,6 +514,33 @@ def _draw_pcr_metric(draw, box, card, fonts) -> None:
     draw.text((x, y + 73), f"变化  {change}", fill=color, font=fonts["small"])
 
 
+def _draw_volume_pcr_metric(draw, box, card, fonts) -> None:
+    value = card.session_volume_pcr
+    active = value is not None
+    _metric_box(
+        draw, box, "vpcr", active, WARNING_COLOR if active else MUTED_COLOR, fonts
+    )
+    x, y = box[0] + 14, box[1] + 53
+    draw.text(
+        (x, y),
+        f"当前  {_compact_ratio(value)}",
+        fill=TEXT_COLOR,
+        font=fonts["value"],
+    )
+    if value is None:
+        bias = "数据暂不可用"
+    elif value >= Decimal("1.25"):
+        bias = "put 活跃"
+    elif value <= Decimal("0.8"):
+        bias = "call 活跃"
+    else:
+        bias = "均衡"
+    draw.text((x, y + 36), bias, fill=MUTED_COLOR, font=fonts["value"])
+    draw.text(
+        (x, y + 73), "Put÷Call 成交量", fill=MUTED_COLOR, font=fonts["small"]
+    )
+
+
 def _compact_ratio(value: Decimal | None) -> str:
     if value is None:
         return "--"
@@ -536,12 +566,12 @@ def _draw_skew_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
         return
     draw.text(
         (x, y),
-        f"当前  {metric.current * Decimal('100'):+.2f} pp",
+        f"当前  {metric.current * Decimal('100'):+.2f}",
         fill=TEXT_COLOR,
         font=fonts["value"],
     )
     change_text = "--" if metric.change is None else (
-        f"{metric.change * Decimal('100'):+.2f} pp"
+        f"{metric.change * Decimal('100'):+.2f}"
     )
     draw.text(
         (x, y + 36),
@@ -555,9 +585,9 @@ def _draw_skew_metric(draw, box, metric: AnomalyMetric, fonts) -> None:
     draw.text(
         (x, y + 73),
         (
-            "基线  上一交易日收盘"
+            "基线  昨收盘（pp）"
             if metric.change is not None
-            else "基线  等待上一交易日"
+            else "基线  等待昨收盘"
         ),
         fill=MUTED_COLOR,
         font=fonts["small"],
@@ -610,19 +640,3 @@ def _direction_color(value: Decimal) -> tuple[int, int, int]:
     if value < 0:
         return NEGATIVE_COLOR
     return MUTED_COLOR
-
-
-def _direction_word(value: Decimal) -> str:
-    if value > 0:
-        return "上涨"
-    if value < 0:
-        return "下跌"
-    return "持平"
-
-
-def _oi_word(value: int) -> str:
-    if value > 0:
-        return "增仓"
-    if value < 0:
-        return "减仓"
-    return "持平"
