@@ -59,6 +59,8 @@ class InstantProductChartData:
     rendered_at_ms: int
     rr25_change: Decimal | None = None
     rr25_baseline_trading_day: str | None = None
+    iv_change: Decimal | None = None
+    iv_baseline_trading_day: str | None = None
 
 
 def render_instant_product_chart(
@@ -194,8 +196,20 @@ def _draw_iv(draw, box, data: InstantProductChartData, fonts) -> None:
     draw.text(
         (x, y), f"当前  {iv * Decimal('100'):.2f}%", fill=TEXT, font=fonts["value"]
     )
-    draw.text((x, y + 45), "ΔIV  单次不计算", fill=MUTED, font=fonts["body"])
-    draw.text((x, y + 84), "数据  Orange Hitick", fill=MUTED, font=fonts["small"])
+    change = data.iv_change
+    change_text = "--" if change is None else f"{change * Decimal('100'):+.2f} pp"
+    draw.text(
+        (x, y + 45),
+        f"ΔIV  {change_text}",
+        fill=MUTED if change is None else _direction_color(change),
+        font=fonts["body"],
+    )
+    baseline_text = (
+        f"基线  {data.iv_baseline_trading_day} 收盘"
+        if data.iv_baseline_trading_day is not None
+        else "基线  等待上一交易日"
+    )
+    draw.text((x, y + 84), baseline_text, fill=MUTED, font=fonts["small"])
 
 
 def _draw_oi(draw, box, data: InstantProductChartData, fonts) -> None:

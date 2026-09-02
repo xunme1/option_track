@@ -57,6 +57,8 @@ def make_data(**overrides) -> InstantProductChartData:
         rendered_at_ms=1725000000000,
         rr25_change=Decimal("0.002"),
         rr25_baseline_trading_day="2026-08-28",
+        iv_change=Decimal("0.005"),
+        iv_baseline_trading_day="2026-08-28",
     )
     base.update(overrides)
     return InstantProductChartData(**base)

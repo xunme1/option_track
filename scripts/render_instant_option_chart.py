@@ -170,6 +170,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         baseline = _previous_rr25_baseline(
             root, product.code, collection.market.trading_day
         )
+        iv_baseline = _previous_iv_baseline(
+            root, product.code, collection.market.trading_day
+        )
         current_rr25 = (
             collection.option_snapshot.rr25
             if collection.option_snapshot is not None else None
@@ -187,6 +190,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ),
                 rr25_baseline_trading_day=(
                     baseline[0] if baseline is not None else None
+                ),
+                iv_change=(
+                    collection.market.atm_iv - iv_baseline[1]
+                    if iv_baseline is not None else None
+                ),
+                iv_baseline_trading_day=(
+                    iv_baseline[0] if iv_baseline is not None else None
                 ),
             ),
             output,
@@ -247,6 +257,33 @@ def _previous_rr25_baseline(
                 """
                 SELECT trading_day, rr25
                 FROM daily_option_closes
+                WHERE product_code = ? AND trading_day < ?
+                ORDER BY trading_day DESC
+                LIMIT 1
+                """,
+                (product_code, trading_day),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row[0]), Decimal(str(row[1]))
+    except (OSError, sqlite3.Error, InvalidOperation):
+        return None
+
+
+def _previous_iv_baseline(
+    root: Path, product_code: str, trading_day: str
+) -> tuple[str, Decimal] | None:
+    """Read the previous completed daily IV close without mutating state."""
+    database = root / "state" / "option_monitor.sqlite3"
+    if not database.is_file():
+        return None
+    try:
+        uri = database.resolve().as_uri() + "?mode=ro"
+        with sqlite3.connect(uri, uri=True) as connection:
+            row = connection.execute(
+                """
+                SELECT trading_day, atm_iv
+                FROM daily_iv_closes
                 WHERE product_code = ? AND trading_day < ?
                 ORDER BY trading_day DESC
                 LIMIT 1
