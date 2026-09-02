@@ -79,20 +79,16 @@ class RqdatacProvider:
             return {}
         module = self._client()
         try:
+            # 窗口必须覆盖"夜盘归属下一交易日"的情形：
+            # start 向前取 4 天（周一的交易日从上周五 21:00 夜盘开始），
+            # end 向后取 8 天（周五夜盘归属下周一，长假前夜盘归属节后首日；
+            # RQData 按交易日过滤，未来日期没有数据，取了也无害）。
             minute = module.get_price(
                 list(requested),
-                start_date=as_of,
-                end_date=as_of,
+                start_date=as_of - timedelta(days=4),
+                end_date=as_of + timedelta(days=8),
                 frequency="1m",
-                fields=["close", "volume", "open_interest"],
-                adjust_type="none",
-            )
-            daily = module.get_price(
-                list(requested),
-                start_date=as_of - timedelta(days=10),
-                end_date=as_of,
-                frequency="1d",
-                fields=["open"],
+                fields=["open", "close", "volume", "open_interest"],
                 adjust_type="none",
             )
         except Exception:
@@ -102,16 +98,19 @@ class RqdatacProvider:
         for contract in requested:
             try:
                 minute_rows = minute.xs(contract, level="order_book_id")
-                daily_rows = daily.xs(contract, level="order_book_id")
-                if len(minute_rows) == 0 or len(daily_rows) == 0:
+                if len(minute_rows) == 0:
                     continue
-                last = minute_rows.iloc[-1]
-                latest_daily = daily_rows.iloc[-1]
-                opening_price = _positive_decimal(latest_daily.get("open"))
+                # 只取最后一根 bar 所属交易时段（21:00 为交易日边界）：
+                # 夜盘 21:00 起新交易日，凌晨 bar 归前一晚，白盘归前一晚 21:00。
+                # 开盘价/成交量按同一时段口径计算，避免跨时段拼接。
+                session = _latest_session_rows(minute_rows)
+                first = session.iloc[0]
+                last = session.iloc[-1]
+                opening_price = _positive_decimal(first.get("open"))
                 last_price = _positive_decimal(last.get("close"))
-                volume = _summed_nonnegative_integer(minute_rows["volume"])
+                volume = _summed_nonnegative_integer(session["volume"])
                 open_interest = _nonnegative_integer(last.get("open_interest"))
-                source_time_ms = _timestamp_ms(minute_rows.index[-1])
+                source_time_ms = _timestamp_ms(session.index[-1])
                 if (
                     last_price is None
                     or opening_price is None
@@ -316,6 +315,34 @@ class PrimaryFallbackFuturesClient:
                 if isinstance(quote, FuturesChangeQuote):
                     quotes[product.code] = quote
         return quotes
+
+
+def _session_anchor(ts: datetime) -> datetime:
+    """交易时段锚点：21:00 为交易日边界。
+
+    21:00 及之后的夜盘 bar 锚到当晚 21:00（新交易日）；
+    凌晨和白盘 bar 锚到最近一个有夜盘的傍晚（周一至周五）21:00——
+    周一白盘归上周五夜盘时段，周六凌晨 bar 归周五夜盘时段。
+    已知局限：长假后首个交易日的白盘锚不到节前夜盘（节后昨夜盘
+    与节假日错位的罕见情形），此时开盘价/成交量只含当天白盘，
+    最新价不受影响。
+    """
+    if ts.hour >= 21:
+        return ts.replace(hour=21, minute=0, second=0, microsecond=0)
+    day = ts.date() - timedelta(days=1)
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return datetime(
+        day.year, day.month, day.day, 21, tzinfo=ts.tzinfo
+    )
+
+
+def _latest_session_rows(minute_rows: Any) -> Any:
+    """截取最后一根 bar 所属交易时段的全部分钟行。"""
+    anchors = [_session_anchor(ts.to_pydatetime()) for ts in minute_rows.index]
+    last_anchor = anchors[-1]
+    mask = [anchor == last_anchor for anchor in anchors]
+    return minute_rows[mask]
 
 
 def _last_series_value(value: Any) -> str | None:
