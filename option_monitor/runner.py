@@ -29,6 +29,7 @@ from option_monitor.collector import (
     ProductCollection,
     collect_product,
     resolve_mapping,
+    resolve_near_month_mapping,
     resolve_nearest_option_mapping,
 )
 from option_monitor.dingtalk_alert import build_markdown_payload
@@ -85,6 +86,13 @@ class RunManifest:
     messages: tuple[OutboxMessage, ...]
     coverage_ratio: Decimal
     missing_products: tuple[str, ...]
+
+
+class _NullContractStateStore:
+    """近月采集不读写合约状态：增量口径没有基线，只需快照字段。"""
+
+    def load_contract_state(self, symbol: str):
+        return None
 
 
 class MonitorRunner:
@@ -274,6 +282,16 @@ class MonitorRunner:
                 else Decimal("1")
             )
 
+            near_month_collections: dict[str, ProductCollection] = {}
+            if _is_close_capture_time(observed_now):
+                # 网络采集放在事务外：近月快照只用于基线落盘，失败不影响主流程。
+                near_month_collections = self._collect_near_month_collections(
+                    collections,
+                    authoritative_mappings,
+                    trading_day,
+                    run_at_ms,
+                )
+
             with self.store.transaction():
                 for mapping in authoritative_mappings.values():
                     if mapping.trading_day != trading_day:
@@ -293,7 +311,7 @@ class MonitorRunner:
                     )
                     self.store.save_contract_states(collection.contract_states)
                 if _is_close_capture_time(observed_now):
-                    self._save_daily_closes(collections)
+                    self._save_daily_closes(collections, near_month_collections)
                 self.store.prune(
                     observed_at_ms - self.settings.retention_days * DAY_MS
                 )
@@ -840,26 +858,103 @@ class MonitorRunner:
                 )
         return quotes
 
+    def _collect_near_month_collections(
+        self,
+        collections: Mapping[str, ProductCollection],
+        mappings: Mapping[str, ContractMapping],
+        trading_day: str,
+        run_at_ms: int,
+    ) -> dict[str, ProductCollection]:
+        """收盘时额外采集每个品种近月合约的期权快照，供基线落盘。"""
+        results: dict[str, ProductCollection] = {}
+        for product in self.products:
+            main_mapping = mappings.get(product.code)
+            if product.code not in collections or main_mapping is None:
+                continue
+            try:
+                near_mapping = self._request_with_retry(
+                    lambda product=product, main_mapping=main_mapping: (
+                        resolve_near_month_mapping(
+                            self.client,
+                            product,
+                            trading_day,
+                            run_at_ms,
+                            main_mapping.underlying,
+                        )
+                    )
+                )
+            except Exception:
+                continue
+            if (
+                near_mapping.underlying.casefold()
+                == main_mapping.underlying.casefold()
+            ):
+                continue
+            try:
+                basic = self._request_with_retry(
+                    lambda near_mapping=near_mapping: (
+                        self.client.basic_by_expire(
+                            near_mapping.underlying, near_mapping.expire
+                        )
+                    )
+                )
+                vol = self._request_with_retry(
+                    lambda near_mapping=near_mapping: (
+                        self.client.vol_by_underlying(
+                            near_mapping.underlying,
+                            near_mapping.expire,
+                            near_mapping.multiplier,
+                        )
+                    )
+                )
+                collection = collect_product(
+                    product,
+                    near_mapping,
+                    basic,
+                    vol,
+                    _NullContractStateStore(),
+                    run_at_ms,
+                    int(time.time() * 1000),
+                )
+            except Exception:
+                continue
+            results[product.code] = collection
+        return results
+
     def _save_daily_closes(
-        self, collections: dict[str, ProductCollection]
+        self,
+        collections: dict[str, ProductCollection],
+        near_month_collections: Mapping[str, ProductCollection] | None = None,
     ) -> None:
         for code, collection in collections.items():
-            candidate = DailyIvClose(
-                trading_day=collection.market.trading_day,
-                product_code=code,
-                data_time_ms=collection.market.data_time_ms,
-                atm_iv=collection.market.atm_iv,
-            )
-            existing = next(
-                (
-                    close
-                    for close in self.store.daily_iv_closes(code, 10)
-                    if close.trading_day == candidate.trading_day
-                ),
-                None,
-            )
-            if existing is None or candidate.data_time_ms > existing.data_time_ms:
-                self.store.save_daily_iv_close(candidate)
+            self._save_daily_close_set(code, collection, "main")
+        for code, collection in (near_month_collections or {}).items():
+            self._save_daily_close_set(code, collection, "near")
+
+    def _save_daily_close_set(
+        self, code: str, collection: ProductCollection, role: str
+    ) -> None:
+        underlying = collection.market.underlying
+        candidate = DailyIvClose(
+            trading_day=collection.market.trading_day,
+            product_code=code,
+            data_time_ms=collection.market.data_time_ms,
+            atm_iv=collection.market.atm_iv,
+            underlying=underlying,
+            role=role,
+        )
+        existing = next(
+            (
+                close
+                for close in self.store.daily_iv_closes(code, 10, role=role)
+                if close.trading_day == candidate.trading_day
+            ),
+            None,
+        )
+        if existing is None or candidate.data_time_ms > existing.data_time_ms:
+            self.store.save_daily_iv_close(candidate)
+        # 期货收盘表只有主力序列：近月采集只补充 IV/RR25 基线。
+        if role == "main":
             market_candidate = DailyMarketClose(
                 trading_day=collection.market.trading_day,
                 product_code=code,
@@ -881,31 +976,35 @@ class MonitorRunner:
                 > existing_market.data_time_ms
             ):
                 self.store.save_daily_market_close(market_candidate)
-            option_snapshot = collection.option_snapshot
-            if option_snapshot is None:
-                continue
-            option_candidate = DailyOptionClose(
-                trading_day=collection.market.trading_day,
-                product_code=code,
-                data_time_ms=option_snapshot.data_time_ms,
-                rr25=option_snapshot.rr25,
-                call_open_interest=option_snapshot.call_open_interest,
-                put_open_interest=option_snapshot.put_open_interest,
-            )
-            existing_option = next(
-                (
-                    close
-                    for close in self.store.daily_option_closes(code, 32)
-                    if close.trading_day == option_candidate.trading_day
-                ),
-                None,
-            )
-            if (
-                existing_option is None
-                or option_candidate.data_time_ms
-                > existing_option.data_time_ms
-            ):
-                self.store.save_daily_option_close(option_candidate)
+        option_snapshot = collection.option_snapshot
+        if option_snapshot is None:
+            return
+        option_candidate = DailyOptionClose(
+            trading_day=collection.market.trading_day,
+            product_code=code,
+            data_time_ms=option_snapshot.data_time_ms,
+            rr25=option_snapshot.rr25,
+            call_open_interest=option_snapshot.call_open_interest,
+            put_open_interest=option_snapshot.put_open_interest,
+            underlying=underlying,
+            role=role,
+        )
+        existing_option = next(
+            (
+                close
+                for close in self.store.daily_option_closes(
+                    code, 32, role=role
+                )
+                if close.trading_day == option_candidate.trading_day
+            ),
+            None,
+        )
+        if (
+            existing_option is None
+            or option_candidate.data_time_ms
+            > existing_option.data_time_ms
+        ):
+            self.store.save_daily_option_close(option_candidate)
 
     def _build_messages(
         self,
@@ -1434,6 +1533,7 @@ def ensure_daily_market_history(
                 close.product_code,
                 close.data_time_ms,
                 close.atm_iv,
+                underlying=mapping.underlying,
             ))
     return _prior_market_closes(
         store, mapping.product_code, trading_day

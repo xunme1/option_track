@@ -117,6 +117,10 @@ class DailyIvClose:
     product_code: str
     data_time_ms: int
     atm_iv: Decimal
+    # 该收盘来自哪张合约；旧数据回填不出来时为 ""。
+    underlying: str = ""
+    # main = 当日监控跟随的主力序列；near = 额外记录的近月合约。
+    role: str = "main"
 
 
 @dataclass(frozen=True)
@@ -176,6 +180,10 @@ class DailyOptionClose:
     rr25: Decimal | None
     call_open_interest: int | None = None
     put_open_interest: int | None = None
+    # 该收盘来自哪张合约；旧数据回填不出来时为 ""。
+    underlying: str = ""
+    # main = 当日监控跟随的主力序列；near = 额外记录的近月合约。
+    role: str = "main"
 
 
 @dataclass(frozen=True)

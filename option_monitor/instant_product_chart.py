@@ -66,7 +66,7 @@ class InstantProductChartData:
 def render_instant_product_chart(
     data: InstantProductChartData, output_path: Path
 ) -> Path:
-    """Render one product's current price, IV, OI, and RR25 into a PNG."""
+    """Render one product's current price, IV, OI, PCR, and RR25 into a PNG."""
     if Image is None or ImageDraw is None or ImageFont is None:
         raise InstantProductChartError("Pillow is unavailable")
     font_path = _font_path()
@@ -197,7 +197,7 @@ def _draw_iv(draw, box, data: InstantProductChartData, fonts) -> None:
         (x, y), f"当前  {iv * Decimal('100'):.2f}%", fill=TEXT, font=fonts["value"]
     )
     change = data.iv_change
-    change_text = "--" if change is None else f"{change * Decimal('100'):+.2f} pp"
+    change_text = "——" if change is None else f"{change * Decimal('100'):+.2f} pp"
     draw.text(
         (x, y + 45),
         f"ΔIV  {change_text}",
@@ -207,7 +207,7 @@ def _draw_iv(draw, box, data: InstantProductChartData, fonts) -> None:
     baseline_text = (
         f"基线  {data.iv_baseline_trading_day} 收盘"
         if data.iv_baseline_trading_day is not None
-        else "基线  等待上一交易日"
+        else "基线  暂无该合约收盘"
     )
     draw.text((x, y + 84), baseline_text, fill=MUTED, font=fonts["small"])
 
@@ -295,7 +295,7 @@ def _draw_skew(draw, box, data: InstantProductChartData, fonts) -> None:
             font=fonts["value"],
         )
     change = data.rr25_change
-    change_text = "--" if change is None else f"{change * Decimal('100'):+.2f} pp"
+    change_text = "——" if change is None else f"{change * Decimal('100'):+.2f} pp"
     draw.text(
         (x, y + 45),
         f"ΔRR25  {change_text}",
@@ -305,7 +305,7 @@ def _draw_skew(draw, box, data: InstantProductChartData, fonts) -> None:
     baseline_text = (
         f"基线  {data.rr25_baseline_trading_day} 收盘"
         if data.rr25_baseline_trading_day is not None
-        else "基线  等待上一交易日"
+        else "基线  暂无该合约收盘"
     )
     draw.text((x, y + 84), baseline_text, fill=MUTED, font=fonts["small"])
 
@@ -316,7 +316,7 @@ def _draw_footer(draw, data: InstantProductChartData, fonts) -> None:
     )
     draw.text(
         (44, 430),
-        f"期权快照时间  {market_time:%Y-%m-%d %H:%M:%S}  |  ΔRR25 仅读取本地日度基线  |  OI PCR = Put / Call 总持仓（昨收=昨持仓比）  |  Volume PCR = Put / Call 当日累计成交量",
+        f"期权快照时间  {market_time:%Y-%m-%d %H:%M:%S}  |  ΔIV/ΔRR25 基线=同合约昨收  |  OI PCR = Put / Call 总持仓（昨收=昨持仓比）  |  Volume PCR = Put / Call 当日累计成交量",
         fill=MUTED,
         font=fonts["small"],
     )

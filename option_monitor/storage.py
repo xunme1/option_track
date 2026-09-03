@@ -106,7 +106,9 @@ class MonitorStore:
                     product_code TEXT NOT NULL,
                     data_time_ms INTEGER NOT NULL,
                     atm_iv TEXT NOT NULL,
-                    PRIMARY KEY (trading_day, product_code)
+                    underlying TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL DEFAULT 'main',
+                    PRIMARY KEY (trading_day, product_code, role)
                 );
 
                 CREATE TABLE IF NOT EXISTS daily_market_closes (
@@ -156,7 +158,9 @@ class MonitorStore:
                     rr25 TEXT,
                     call_open_interest INTEGER,
                     put_open_interest INTEGER,
-                    PRIMARY KEY (trading_day, product_code)
+                    underlying TEXT NOT NULL DEFAULT '',
+                    role TEXT NOT NULL DEFAULT 'main',
+                    PRIMARY KEY (trading_day, product_code, role)
                 );
 
                 CREATE TABLE IF NOT EXISTS runs (
@@ -259,6 +263,107 @@ class MonitorStore:
                     ADD COLUMN put_open_interest INTEGER
                     """
                 )
+            # 基线表引入合约维度：主键扩为 (trading_day, product_code, role)，
+            # 旧行 role 记为 main，underlying 尽力从当日快照回填，回填不出
+            # 的留空串——即时图按合约匹配时空串不会命中，避免拿错合约的
+            # 基线误导。
+            daily_iv_close_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(daily_iv_closes)"
+                )
+            }
+            if "role" not in daily_iv_close_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE daily_iv_closes
+                    RENAME TO daily_iv_closes_role_legacy
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE daily_iv_closes (
+                        trading_day TEXT NOT NULL,
+                        product_code TEXT NOT NULL,
+                        data_time_ms INTEGER NOT NULL,
+                        atm_iv TEXT NOT NULL,
+                        underlying TEXT NOT NULL DEFAULT '',
+                        role TEXT NOT NULL DEFAULT 'main',
+                        PRIMARY KEY (trading_day, product_code, role)
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO daily_iv_closes (
+                        trading_day, product_code, data_time_ms, atm_iv,
+                        underlying, role
+                    )
+                    SELECT t.trading_day, t.product_code, t.data_time_ms,
+                           t.atm_iv,
+                           COALESCE((
+                               SELECT s.underlying
+                               FROM option_analytics_snapshots s
+                               WHERE s.product_code = t.product_code
+                                 AND s.trading_day = t.trading_day
+                               ORDER BY s.run_at_ms DESC
+                               LIMIT 1
+                           ), ''),
+                           'main'
+                    FROM daily_iv_closes_role_legacy t
+                    """
+                )
+                connection.execute("DROP TABLE daily_iv_closes_role_legacy")
+            daily_option_close_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(daily_option_closes)"
+                )
+            }
+            if "role" not in daily_option_close_columns:
+                connection.execute(
+                    """
+                    ALTER TABLE daily_option_closes
+                    RENAME TO daily_option_closes_role_legacy
+                    """
+                )
+                connection.execute(
+                    """
+                    CREATE TABLE daily_option_closes (
+                        trading_day TEXT NOT NULL,
+                        product_code TEXT NOT NULL,
+                        data_time_ms INTEGER NOT NULL,
+                        rr25 TEXT,
+                        call_open_interest INTEGER,
+                        put_open_interest INTEGER,
+                        underlying TEXT NOT NULL DEFAULT '',
+                        role TEXT NOT NULL DEFAULT 'main',
+                        PRIMARY KEY (trading_day, product_code, role)
+                    )
+                    """
+                )
+                connection.execute(
+                    """
+                    INSERT INTO daily_option_closes (
+                        trading_day, product_code, data_time_ms, rr25,
+                        call_open_interest, put_open_interest,
+                        underlying, role
+                    )
+                    SELECT t.trading_day, t.product_code, t.data_time_ms,
+                           t.rr25, t.call_open_interest, t.put_open_interest,
+                           COALESCE((
+                               SELECT s.underlying
+                               FROM option_analytics_snapshots s
+                               WHERE s.product_code = t.product_code
+                                 AND s.trading_day = t.trading_day
+                               ORDER BY s.run_at_ms DESC
+                               LIMIT 1
+                           ), ''),
+                           'main'
+                    FROM daily_option_closes_role_legacy t
+                    """
+                )
+                connection.execute("DROP TABLE daily_option_closes_role_legacy")
             if "multiplier" not in contract_oi_columns:
                 connection.execute(
                     "ALTER TABLE contract_oi_changes ADD COLUMN multiplier TEXT"
@@ -576,14 +681,39 @@ class MonitorStore:
     def save_daily_iv_close(self, close: DailyIvClose) -> None:
         self._write(
             """
-            INSERT INTO daily_iv_closes (trading_day, product_code, data_time_ms, atm_iv)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(trading_day, product_code) DO UPDATE SET
+            INSERT INTO daily_iv_closes (
+                trading_day, product_code, data_time_ms, atm_iv,
+                underlying, role
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(trading_day, product_code, role) DO UPDATE SET
                 data_time_ms = excluded.data_time_ms,
-                atm_iv = excluded.atm_iv
+                atm_iv = excluded.atm_iv,
+                underlying = excluded.underlying
             """,
-            (close.trading_day, close.product_code, close.data_time_ms, str(close.atm_iv)),
+            (
+                close.trading_day, close.product_code, close.data_time_ms,
+                str(close.atm_iv), close.underlying, close.role,
+            ),
         )
+
+    def previous_daily_iv_close_for_underlying(
+        self, product_code: str, underlying: str, trading_day: str
+    ) -> DailyIvClose | None:
+        """指定合约在 trading_day 之前最近的一行收盘（main/near 均可）。"""
+        row = self._read_one(
+            """
+            SELECT trading_day, product_code, data_time_ms, atm_iv,
+                   underlying, role
+            FROM daily_iv_closes
+            WHERE product_code = ? AND underlying = ? COLLATE NOCASE
+              AND trading_day < ?
+            ORDER BY trading_day DESC
+            LIMIT 1
+            """,
+            (product_code, underlying, trading_day),
+        )
+        return None if row is None else self._daily_iv_close_from_row(row)
 
     def save_option_snapshot(self, snapshot: OptionAnalyticsSnapshot) -> None:
         concentrations = json.dumps(
@@ -674,9 +804,10 @@ class MonitorStore:
             """
             INSERT INTO daily_option_closes (
                 trading_day, product_code, data_time_ms, rr25,
-                call_open_interest, put_open_interest
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(trading_day, product_code) DO UPDATE SET
+                call_open_interest, put_open_interest,
+                underlying, role
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(trading_day, product_code, role) DO UPDATE SET
                 data_time_ms = excluded.data_time_ms,
                 rr25 = COALESCE(
                     excluded.rr25,
@@ -689,45 +820,67 @@ class MonitorStore:
                 put_open_interest = COALESCE(
                     excluded.put_open_interest,
                     daily_option_closes.put_open_interest
-                )
+                ),
+                underlying = excluded.underlying
             """,
             (
                 close.trading_day, close.product_code,
                 close.data_time_ms, _optional_text(close.rr25),
                 close.call_open_interest, close.put_open_interest,
+                close.underlying, close.role,
             ),
         )
 
+    def previous_daily_option_close_for_underlying(
+        self, product_code: str, underlying: str, trading_day: str
+    ) -> DailyOptionClose | None:
+        """指定合约在 trading_day 之前最近的一行收盘（main/near 均可）。"""
+        row = self._read_one(
+            """
+            SELECT trading_day, product_code, data_time_ms, rr25,
+                   call_open_interest, put_open_interest, underlying, role
+            FROM daily_option_closes
+            WHERE product_code = ? AND underlying = ? COLLATE NOCASE
+              AND trading_day < ?
+            ORDER BY trading_day DESC
+            LIMIT 1
+            """,
+            (product_code, underlying, trading_day),
+        )
+        return None if row is None else self._daily_option_close_from_row(row)
+
     def daily_option_closes(
-        self, product_code: str, limit: int
+        self, product_code: str, limit: int, role: str = "main"
     ) -> list[DailyOptionClose]:
         rows = self._read_all(
             """
             SELECT trading_day, product_code, data_time_ms, rr25,
-                   call_open_interest, put_open_interest
+                   call_open_interest, put_open_interest, underlying, role
             FROM (
                 SELECT trading_day, product_code, data_time_ms, rr25,
-                       call_open_interest, put_open_interest
+                       call_open_interest, put_open_interest, underlying, role
                 FROM daily_option_closes
-                WHERE product_code = ?
+                WHERE product_code = ? AND role = ?
                 ORDER BY trading_day DESC
                 LIMIT ?
             )
             ORDER BY trading_day ASC
             """,
-            (product_code, limit),
+            (product_code, role, limit),
         )
-        return [
-            DailyOptionClose(
-                row["trading_day"], row["product_code"],
-                row["data_time_ms"], (
-                    Decimal(row["rr25"])
-                    if row["rr25"] is not None else None
-                ),
-                row["call_open_interest"], row["put_open_interest"],
-            )
-            for row in rows
-        ]
+        return [self._daily_option_close_from_row(row) for row in rows]
+
+    @staticmethod
+    def _daily_option_close_from_row(row) -> DailyOptionClose:
+        return DailyOptionClose(
+            row["trading_day"], row["product_code"],
+            row["data_time_ms"], (
+                Decimal(row["rr25"])
+                if row["rr25"] is not None else None
+            ),
+            row["call_open_interest"], row["put_open_interest"],
+            row["underlying"], row["role"],
+        )
 
     def save_daily_market_close(self, close: DailyMarketClose) -> None:
         self._write(
@@ -778,28 +931,33 @@ class MonitorStore:
         )
         return None if row is None else self._daily_market_close_from_row(row)
 
-    def daily_iv_closes(self, product_code: str, limit: int) -> list[DailyIvClose]:
+    def daily_iv_closes(
+        self, product_code: str, limit: int, role: str = "main"
+    ) -> list[DailyIvClose]:
         rows = self._read_all(
             """
-            SELECT trading_day, product_code, data_time_ms, atm_iv
+            SELECT trading_day, product_code, data_time_ms, atm_iv,
+                   underlying, role
             FROM (
-                SELECT trading_day, product_code, data_time_ms, atm_iv
+                SELECT trading_day, product_code, data_time_ms, atm_iv,
+                       underlying, role
                 FROM daily_iv_closes
-                WHERE product_code = ?
+                WHERE product_code = ? AND role = ?
                 ORDER BY trading_day DESC
                 LIMIT ?
             )
             ORDER BY trading_day ASC
             """,
-            (product_code, limit),
+            (product_code, role, limit),
         )
-        return [
-            DailyIvClose(
-                row["trading_day"], row["product_code"], row["data_time_ms"],
-                Decimal(row["atm_iv"]),
-            )
-            for row in rows
-        ]
+        return [self._daily_iv_close_from_row(row) for row in rows]
+
+    @staticmethod
+    def _daily_iv_close_from_row(row) -> DailyIvClose:
+        return DailyIvClose(
+            row["trading_day"], row["product_code"], row["data_time_ms"],
+            Decimal(row["atm_iv"]), row["underlying"], row["role"],
+        )
 
     def record_run(
         self,

@@ -249,6 +249,105 @@ def resolve_nearest_option_mapping(
     )
 
 
+def resolve_near_month_mapping(
+    client: Any,
+    product: ProductSpec,
+    trading_day: str,
+    resolved_at_ms: int,
+    main_underlying: str,
+) -> ContractMapping:
+    """Resolve the nearest unexpired option contract month (the 近月).
+
+    用于日度收盘时额外记录近月合约的 IV/RR25 基线。近月 = 月份最近的
+    未到期合约；如果最近月就是主力本身，说明没有额外的近月可记，
+    抛出 MainOptionUnavailable 让调用方跳过。
+    """
+    resolved = client.resolve_subject(product.code)
+    if not isinstance(resolved, dict):
+        raise HitickError("invalid subject resolution")
+    if resolved.get("found") is not True:
+        raise HitickError("subject resolution did not find a contract")
+    if resolved.get("ambiguous") is not False:
+        raise HitickError("subject resolution is ambiguous")
+
+    raw_candidates = []
+    selected = resolved.get("selected")
+    if isinstance(selected, dict):
+        raw_candidates.append(selected)
+    candidates = resolved.get("candidates")
+    if isinstance(candidates, list):
+        raw_candidates.extend(
+            candidate for candidate in candidates
+            if isinstance(candidate, dict)
+        )
+
+    prefix = UNDERLYING_PREFIXES.get(product.code, product.code)
+    contract_pattern = re.compile(
+        rf"{re.escape(prefix)}(?:\d{{3}}|\d{{4}})", re.IGNORECASE
+    )
+    main_month = _contract_month(main_underlying, prefix, trading_day)
+    valid: dict[
+        tuple[tuple[int, int], str, str, Decimal], str
+    ] = {}
+    for candidate in raw_candidates:
+        underlying = _required_text(candidate, "underlying", "option contract")
+        expire = _required_text(candidate, "expire", "option contract")
+        multiplier = _decimal(
+            candidate.get("multiplier"), "option contract multiplier"
+        )
+        if contract_pattern.fullmatch(underlying) is None:
+            continue
+        candidate_month = _contract_month(underlying, prefix, trading_day)
+        if expire <= trading_day or multiplier <= ZERO:
+            continue
+        valid[(
+            candidate_month,
+            underlying.casefold(),
+            expire,
+            multiplier,
+        )] = underlying
+    if not valid:
+        raise HitickError(
+            "subject resolution has no unexpired option contract"
+        )
+
+    # 近月 = 月份最近的未到期合约。
+    near_month = min(key[0] for key in valid)
+    if near_month == main_month:
+        raise MainOptionUnavailable(
+            "nearest option contract month is the main contract itself"
+        )
+    near_underlyings = {key[1] for key in valid if key[0] == near_month}
+    if len(near_underlyings) != 1:
+        raise HitickError("near-month option contract is ambiguous")
+    near_key = next(iter(near_underlyings))
+    identities = {
+        (expire, multiplier)
+        for month, underlying_key, expire, multiplier in valid
+        if month == near_month and underlying_key == near_key
+    }
+    if len(identities) != 1:
+        raise HitickError("near-month option contract is ambiguous")
+    expire, multiplier = next(iter(identities))
+    near_underlying = next(
+        underlying
+        for (month, underlying_key, candidate_expire, candidate_multiplier), underlying
+        in valid.items()
+        if month == near_month
+        and underlying_key == near_key
+        and candidate_expire == expire
+        and candidate_multiplier == multiplier
+    )
+    return ContractMapping(
+        trading_day=trading_day,
+        product_code=product.code,
+        underlying=near_underlying,
+        expire=expire,
+        multiplier=multiplier,
+        resolved_at_ms=resolved_at_ms,
+    )
+
+
 def _contract_month(
     underlying: str,
     prefix: str,

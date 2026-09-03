@@ -44,7 +44,7 @@ class _EmptyStateStore:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Collect one product live and render a four-panel option PNG."
+        description="Collect one product live and render a six-panel option PNG."
     )
     parser.add_argument(
         "--product",
@@ -168,10 +168,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             (product,), {product.code: mapping}
         ).get(product.code)
         baseline = _previous_rr25_baseline(
-            root, product.code, collection.market.trading_day
+            root, product.code, mapping.underlying,
+            collection.market.trading_day,
         )
         iv_baseline = _previous_iv_baseline(
-            root, product.code, collection.market.trading_day
+            root, product.code, mapping.underlying,
+            collection.market.trading_day,
         )
         current_rr25 = (
             collection.option_snapshot.rr25
@@ -244,9 +246,13 @@ def _contract(value: str | None) -> str | None:
 
 
 def _previous_rr25_baseline(
-    root: Path, product_code: str, trading_day: str
+    root: Path, product_code: str, underlying: str, trading_day: str
 ) -> tuple[str, Decimal] | None:
-    """Read the previous completed daily RR25 snapshot without mutating state."""
+    """Read the previous daily RR25 close of the same contract, read-only.
+
+    只匹配同一合约（underlying 一致）的历史收盘；查不到时返回 None，
+    图上显示"——"，避免拿别的合约（比如主力）的基线冒充。
+    """
     database = root / "state" / "option_monitor.sqlite3"
     if not database.is_file():
         return None
@@ -257,13 +263,14 @@ def _previous_rr25_baseline(
                 """
                 SELECT trading_day, rr25
                 FROM daily_option_closes
-                WHERE product_code = ? AND trading_day < ?
+                WHERE product_code = ? AND underlying = ? COLLATE NOCASE
+                  AND trading_day < ?
                 ORDER BY trading_day DESC
                 LIMIT 1
                 """,
-                (product_code, trading_day),
+                (product_code, underlying, trading_day),
             ).fetchone()
-        if row is None:
+        if row is None or row[1] is None:
             return None
         return str(row[0]), Decimal(str(row[1]))
     except (OSError, sqlite3.Error, InvalidOperation):
@@ -271,9 +278,9 @@ def _previous_rr25_baseline(
 
 
 def _previous_iv_baseline(
-    root: Path, product_code: str, trading_day: str
+    root: Path, product_code: str, underlying: str, trading_day: str
 ) -> tuple[str, Decimal] | None:
-    """Read the previous completed daily IV close without mutating state."""
+    """Read the previous daily IV close of the same contract, read-only."""
     database = root / "state" / "option_monitor.sqlite3"
     if not database.is_file():
         return None
@@ -284,11 +291,12 @@ def _previous_iv_baseline(
                 """
                 SELECT trading_day, atm_iv
                 FROM daily_iv_closes
-                WHERE product_code = ? AND trading_day < ?
+                WHERE product_code = ? AND underlying = ? COLLATE NOCASE
+                  AND trading_day < ?
                 ORDER BY trading_day DESC
                 LIMIT 1
                 """,
-                (product_code, trading_day),
+                (product_code, underlying, trading_day),
             ).fetchone()
         if row is None:
             return None
