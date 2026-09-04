@@ -72,9 +72,12 @@ def select_anomaly_delivery(
 
     selected: list[str] = []
     selected_set: set[str] = set()
+    # 文字解读上限与长图对齐：指数/金属各至多 2 个，确认方向至多 4 个、
+    # 背离至多 2 个，总封顶 8 个。
+    max_text = 8
 
     def add(code: str) -> None:
-        if code not in selected_set:
+        if code not in selected_set and len(selected) < max_text:
             selected.append(code)
             selected_set.add(code)
 
@@ -82,8 +85,8 @@ def select_anomaly_delivery(
         candidates = _rank_codes(
             (code for code in group if code in eligible), scores
         )
-        if candidates:
-            add(candidates[0])
+        for code in candidates[:2]:
+            add(code)
 
     added_confirmed = 0
     for code in confirmed_codes:
@@ -91,11 +94,15 @@ def select_anomaly_delivery(
             continue
         add(code)
         added_confirmed += 1
-        if added_confirmed == 2:
+        if added_confirmed == 4:
             break
+    added_divergence = 0
     for code in divergence_codes:
-        if code not in selected_set:
-            add(code)
+        if code in selected_set:
+            continue
+        add(code)
+        added_divergence += 1
+        if added_divergence == 2:
             break
 
     image_cards = tuple(
